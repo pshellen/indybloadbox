@@ -216,6 +216,15 @@
       padding: 0 calc(20px * var(--sx, 1));
     }
 
+    .show-time {
+      margin-top: calc(12px * var(--sy, 1));
+      text-align: center;
+      font-size: calc(var(--logical-short, 1080px) * 0.048);
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 0 calc(20px * var(--sx, 1));
+    }
+
     .meta {
       margin-top: calc(20px * var(--sy, 1));
       display: flex;
@@ -239,8 +248,8 @@
     }
 
     .bottom {
-      margin-top: auto;
-      min-height: calc(var(--logical-short, 1080px) * 0.14);
+      margin-top: calc(12px * var(--sy, 1));
+      min-height: calc(var(--logical-short, 1080px) * 0.11);
       padding: calc(8px * var(--sy, 1)) calc(40px * var(--sx, 1)) calc(12px * var(--sy, 1)) calc(8px * var(--sx, 1));
       display: flex;
       justify-content: space-between;
@@ -264,6 +273,14 @@
       height: calc(var(--logical-short, 1080px) * 0.12);
       max-width: 40%;
       object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .bottom-time {
+      font-size: calc(var(--logical-short, 1080px) * 0.048);
+      font-weight: 700;
+      text-transform: uppercase;
+      text-align: right;
       flex-shrink: 0;
     }
 
@@ -387,12 +404,13 @@
         <img class="badge-3d" id="badge3d" src="3D.png" alt="3D" />
         <div class="title" id="title"></div>
       </div>
+      <div class="show-time" id="showTime"></div>
       <div class="screen-name" id="screenName"></div>
       <div class="bottom">
         <div class="bottom-left">
           <img class="corner-logo" id="mainLogo" src="flagship.png" alt="" />
         </div>
-        <div id="showTime"></div>
+        <div class="bottom-time" id="bottomTime"></div>
       </div>
     </div>
   </div>
@@ -577,6 +595,9 @@
       const badge3d = document.getElementById("badge3d");
       const screenNameEl = document.getElementById("screenName");
       const showTime = document.getElementById("showTime");
+      const bottomTime = document.getElementById("bottomTime");
+      const rotation = Number(rotationEl.value);
+      const isPortrait = rotation === 90 || rotation === 270;
       const upcoming = phase === "upcoming";
 
       const has3d = !!(show && (show.showingBadges || []).some((b) => {
@@ -590,6 +611,7 @@
         badge3d.classList.remove("show");
         screenNameEl.textContent = (screenName || "").toUpperCase();
         showTime.textContent = "";
+        bottomTime.textContent = "";
         return;
       }
 
@@ -614,7 +636,14 @@
       title.textContent = movie.name;
       badge3d.classList.toggle("show", has3d);
       screenNameEl.textContent = (screenName || "").toUpperCase();
-      showTime.textContent = "Show Start: " + formatTime(show.time);
+      const startLabel = "Show Start: " + formatTime(show.time);
+      if (isPortrait) {
+        showTime.textContent = startLabel;
+        bottomTime.textContent = "";
+      } else {
+        showTime.textContent = "";
+        bottomTime.textContent = startLabel;
+      }
     }
 
     function fillPicker(showings) {
