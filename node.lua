@@ -91,10 +91,18 @@ local function compute_layout()
         info_gap -
         layout.bottom_size
 
+    -- Move only the title slightly lower to create more space
+    -- beneath the poster. The same amount is added to the reserved
+    -- poster/title gap below so the poster remains the same size.
+    local title_down =
+        portrait and short * 0.018
+        or scale_y(12)
+
     layout.movie_y =
         layout.showtime_y -
         info_gap -
-        layout.title_size
+        layout.title_size +
+        title_down
 
     -- Reserve space for logo.png above the poster.
     layout.top_logo_y = short * 0.025
@@ -120,8 +128,8 @@ local function compute_layout()
     -- Reserve enough clear space between the enlarged poster
     -- and the movie title so the title cannot overlap the poster.
     layout.poster_title_gap =
-        portrait and short * 0.050
-        or scale_y(36)
+        (portrait and short * 0.050 or scale_y(36)) +
+        title_down
 
     layout.poster_h = math.max(
         scale_y(280),
