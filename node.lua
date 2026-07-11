@@ -61,17 +61,20 @@ local function compute_layout()
 
     local info_gap = scale_y(12)
 
-    -- Move the poster down slightly while moving the title, showtime,
-    -- and screen number farther down.
+    -- Move the poster down slightly.
     local poster_down = portrait and short * 0.020 or scale_y(8)
-    local info_down = portrait and short * 0.050 or scale_y(8)
+
+    -- Push the title, show start, and screen number closer to the
+    -- bottom of the display. Because the poster height ends at the
+    -- title position, this also gives the poster more vertical space.
+    local info_down = portrait and short * 0.120 or scale_y(28)
 
     -- Rotated portrait signs clip the logical bottom edge on the physical display.
     local safe_inset = portrait and math.max(scale_y(100), HEIGHT * 0.10) or scale_y(32)
 
     -- Keep a small physical safety margin at the bottom.
     local normal_footer_y = HEIGHT - safe_inset - layout.footer_h
-    local lowest_footer_y = HEIGHT - scale_y(64) - layout.footer_h
+    local lowest_footer_y = HEIGHT - scale_y(24) - layout.footer_h
 
     layout.footer_y = math.min(
         normal_footer_y + info_down,
@@ -117,7 +120,7 @@ local function compute_layout()
     -- Reserve enough clear space between the enlarged poster
     -- and the movie title so the title cannot overlap the poster.
     layout.poster_title_gap =
-        portrait and short * 0.150
+        portrait and short * 0.050
         or scale_y(36)
 
     layout.poster_h = math.max(
