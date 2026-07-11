@@ -117,7 +117,7 @@ local function compute_layout()
     -- Reserve enough clear space between the enlarged poster
     -- and the movie title so the title cannot overlap the poster.
     layout.poster_title_gap =
-        portrait and short * 0.050
+        portrait and short * 0.150
         or scale_y(36)
 
     layout.poster_h = math.max(
