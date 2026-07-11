@@ -42,27 +42,36 @@ local function scale_s(s)
 end
 
 local function compute_layout()
-    layout.poster_y = scale_y(56)
-    layout.poster_h = scale_y(700)
-    layout.poster_pad = scale_x(4)
-    layout.poster_x1 = layout.poster_pad
-    layout.poster_x2 = WIDTH - layout.poster_pad
-    layout.poster_y2 = layout.poster_y + layout.poster_h
-    layout.badge_w = scale_x(572)
-    layout.movie_y = scale_y(780)
-    layout.screen_y = scale_y(860)
-    layout.bottom_y = scale_y(960)
-    -- Size off the shorter side so portrait stays readable
     local short = math.min(WIDTH, HEIGHT)
-    layout.corner_size = short * 0.18
-    layout.badge_3d_size = short * 0.09
-    layout.badge_size = scale_s(76.8)
+    layout.bottom_pad = scale_y(8)
+    layout.bottom_size = short * 0.048
+    layout.footer_h = math.max(short * 0.14, layout.bottom_size * 3)
+    layout.footer_y = HEIGHT - layout.footer_h
+    layout.corner_size = layout.footer_h - layout.bottom_pad * 2
+
     if portrait then
         layout.title_size = short * 0.08
     else
         layout.title_size = scale_s(64)
     end
-    layout.bottom_size = short * 0.048
+
+    layout.badge_3d_size = short * 0.09
+    layout.badge_size = scale_s(76.8)
+    layout.badge_w = scale_x(572)
+
+    local info_gap = scale_y(12)
+    local info_pad = scale_y(20)
+    layout.info_h = layout.title_size + info_gap + layout.bottom_size + info_pad
+    layout.movie_y = layout.footer_y - layout.info_h + info_pad
+    layout.screen_y = layout.movie_y + layout.title_size + info_gap
+
+    layout.poster_pad = scale_x(4)
+    layout.poster_x1 = layout.poster_pad
+    layout.poster_x2 = WIDTH - layout.poster_pad
+    layout.poster_y = scale_y(56)
+    layout.poster_h = math.max(scale_y(320), layout.footer_y - layout.poster_y - layout.info_h - scale_y(16))
+    layout.poster_y2 = layout.poster_y + layout.poster_h
+    layout.bottom_y = layout.footer_y + (layout.footer_h - layout.bottom_size) / 2
 end
 
 local function fit_text(text, max_size, max_width, min_size)
@@ -158,11 +167,11 @@ local function draw_bottom_bar(show)
     end
 
     local show_time = (show.start or ""):upper()
-    local pad = scale_y(8)
+    local pad = layout.bottom_pad
     local size = layout.corner_size
-    local ly2 = HEIGHT - pad
-    local ly1 = ly2 - size
-    local text_y = ly1 + (size - layout.bottom_size) / 2
+    local ly1 = layout.footer_y + pad
+    local ly2 = ly1 + size
+    local text_y = layout.bottom_y
 
     if main_logo then
         local lw, lh = main_logo:size()
@@ -172,13 +181,13 @@ local function draw_bottom_bar(show)
         local lw, lh = corner_logo:size()
         local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
         corner_logo:draw(scale_x(8) + ix1, ly1 + iy1, scale_x(8) + ix2, ly1 + iy2)
-    else
-        text_y = layout.bottom_y
     end
 
-    local time_label = "Show Start: " .. show_time
-    local time_w = font:width(time_label, layout.bottom_size)
-    font:write(WIDTH - time_w - scale_x(40), text_y, time_label, layout.bottom_size, 1, 1, 1, 1)
+    if show_time ~= "" then
+        local time_label = "Show Start: " .. show_time
+        local time_w = font:width(time_label, layout.bottom_size)
+        font:write(WIDTH - time_w - scale_x(40), text_y, time_label, layout.bottom_size, 1, 1, 1, 1)
+    end
 end
 
 util.file_watch("border.glsl", function(raw)
@@ -229,6 +238,9 @@ util.file_watch("config.json", function(raw)
                  matrix.trans(-NATIVE_WIDTH/2, -NATIVE_HEIGHT/2)
 
     portrait = rotation == 90 or rotation == 270
+    if portrait == false and WIDTH > HEIGHT then
+        print("WARNING: landscape canvas (" .. WIDTH .. "x" .. HEIGHT .. ") - portrait-mounted signs need rotation 90 or 270")
+    end
     compute_layout()
 end)
 
@@ -476,9 +488,12 @@ function node.render()
         local x, y = WIDTH-250, 10
         font:write(x, y, "Serial: " .. my_serial, 12, 1,1,1,1); y=y+12
         font:write(x, y, ("Time: %s"):format(local_time), 12, 1,1,1,1); y=y+12
+        font:write(x, y, ("Canvas: %dx%d rot %d"):format(WIDTH, HEIGHT, rotation), 12, 1,1,1,1); y=y+12
+        font:write(x, y, ("Footer: y=%d h=%d"):format(layout.footer_y or -1, layout.footer_h or -1), 12, 1,1,1,1); y=y+12
         if screen.show then
             font:write(x, y, "Show: "..screen.show.name, 12, 1,1,1,1); y=y+12
             font:write(x, y, "Status: "..(screen.show.status_label or ""), 12, 1,1,1,1); y=y+12
+            font:write(x, y, "Start: "..(screen.show.start or ""), 12, 1,1,1,1); y=y+12
             font:write(x, y, "Media: "..(screen.show.media_type or ""), 12, 1,1,1,1); y=y+12
         end
     end
