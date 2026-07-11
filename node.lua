@@ -59,7 +59,6 @@ local function compute_layout()
     layout.badge_w = scale_x(572)
 
     local info_gap = scale_y(12)
-    -- Rotated portrait signs clip the logical bottom edge on the physical display.
     local safe_inset = portrait and math.max(scale_y(100), HEIGHT * 0.10) or scale_y(32)
 
     layout.footer_y = HEIGHT - safe_inset - layout.footer_h
@@ -68,10 +67,17 @@ local function compute_layout()
     layout.showtime_y = layout.screen_y - info_gap - layout.bottom_size
     layout.movie_y = layout.showtime_y - info_gap - layout.title_size
 
+    -- Top logo area
+    layout.top_logo_y = scale_y(20)
+    layout.top_logo_h = scale_y(110)
+    layout.top_logo_gap = scale_y(18)
+
     layout.poster_pad = scale_x(4)
     layout.poster_x1 = layout.poster_pad
     layout.poster_x2 = WIDTH - layout.poster_pad
-    layout.poster_y = scale_y(56)
+
+    -- Move poster down so the logo can sit above it
+    layout.poster_y = layout.top_logo_y + layout.top_logo_h + layout.top_logo_gap
     layout.poster_h = math.max(scale_y(280), layout.movie_y - layout.poster_y - scale_y(16))
     layout.poster_y2 = layout.poster_y + layout.poster_h
 end
