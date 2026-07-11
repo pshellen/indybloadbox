@@ -175,22 +175,30 @@
     }
 
     .times {
-      background: var(--bg-times);
-      flex: 0 0 auto;
+      background: #000;
+      flex: 1 1 0;
       display: grid;
       gap: 0;
-      padding: 4px 1px 1px;
-      min-height: 72px;
+      padding: 0;
+      min-height: 0;
+      width: 100%;
     }
 
     .time {
       display: flex;
       align-items: center;
       justify-content: center;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      box-sizing: border-box;
+      background: var(--bg-times);
+      border: 1px solid #000;
       color: var(--text-light);
       font-weight: 700;
       position: relative;
-      padding: 2px;
+      line-height: 1;
     }
 
     .time.past { color: var(--text-past); }
@@ -330,18 +338,17 @@
       return size;
     }
 
-    function timeFontSize(cellW, cellH, cols, rows, infoH, split) {
-      return Math.max(12, Math.floor(Math.min(
-        cellW / cols / 4.2,
-        (cellH - split - infoH) / rows / 4.2
-      )));
+    function timeFontSize(showW, showH, timeString) {
+      const len = Math.max(4, (timeString || "12:00pm").length);
+      return Math.max(14, Math.floor(Math.min(showW / (len * 0.62), showH * 0.62)));
     }
 
     function renderCell(movie, cellW, cellH, cfg) {
       const split = Math.min(cellH - 150, cellH / 1.5);
       const infoH = cfg.display_badges && movie.badges?.length ? 72 : 50;
       const [timeCols, timeRows] = timeGrid(movie.shows.length);
-      const fontSize = timeFontSize(cellW, cellH, timeCols, timeRows, infoH, split);
+      const showW = cellW / timeCols;
+      const showH = (cellH - split - infoH) / timeRows;
       const now = currentOffsetMinutes();
 
       let posterHtml;
@@ -366,12 +373,12 @@
         if (started) cls += " past";
         else if (show.seats === 0) cls += " soldout";
         else if (show.seats <= 20) cls += " warn";
-        return `<div class="${cls}" style="font-size:${fontSize}px">${show.string}</div>`;
+        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string)}px">${show.string}</div>`;
       }).join("");
 
       return `
         <div class="cell">
-          <div class="poster-area" style="max-height:${split}px">${posterHtml}</div>
+          <div class="poster-area" style="height:${split}px;flex:0 0 ${split}px">${posterHtml}</div>
           <div class="info-line ${badgeHtml ? "has-badges" : ""}">
             <div class="info-top">
               <span>${movie.mpaa || "&nbsp;"}</span>

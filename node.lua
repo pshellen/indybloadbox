@@ -448,9 +448,10 @@ local function show_bload()
                 res.font:write(x + (cell_w-badge_w)/2, y+split+38, badge_text, badge_size, 0,0,0,1)
             end
 
-            -- showtime box
-            fgfill:draw(x+1, y+split+info_h+1, x+cell_w-1, y+cell_h-1)
-            local time_cols, time_rows, font_size
+            -- showtime grid
+            local times_y = y + split + info_h + 1
+            local times_h = cell_h - split - info_h - 2
+            local time_cols, time_rows
             if #movie.shows <= 1 then
                 time_cols = 1
                 time_rows = 1
@@ -482,23 +483,31 @@ local function show_bload()
                 time_cols = 6
                 time_rows = 5
             end
-            font_size = math.floor(math.min(
-                cell_w / time_cols / 4.2,
-                cell_h / time_rows / 4.2
-            ))
 
-            local show_w = math.floor(cell_w/time_cols)
-            local show_h = math.floor((cell_h - (split+info_h))/time_rows)
+            local show_w = cell_w / time_cols
+            local show_h = times_h / time_rows
             for si = 1, #movie.shows do
                 local show = movie.shows[si]
-                local show_x = math.floor(x+1 + (si-1)%time_cols * show_w)
-                local show_y = math.floor(
-                    y+split+info_h+1+math.floor((si-1)/time_cols) * show_h + (show_h-font_size)/2 + font_size*0.05)
+                local col = (si - 1) % time_cols
+                local row = math.floor((si - 1) / time_cols)
+                local show_x = math.floor(x + 1 + col * show_w)
+                local show_y = math.floor(times_y + row * show_h)
+                local show_x2 = math.floor(x + 1 + (col + 1) * show_w)
+                local show_y2 = math.floor(times_y + (row + 1) * show_h)
+                local slot_w = show_x2 - show_x
+                local slot_h = show_y2 - show_y
+
+                fgfill:draw(show_x, show_y, show_x2, show_y2)
 
                 local showtime = show.showtime
-                local width = res.font:width(showtime.string, font_size)
+                local slot_font = math.floor(math.min(
+                    slot_w / (#showtime.string * 0.62),
+                    slot_h * 0.62
+                ))
+                local width = res.font:width(showtime.string, slot_font)
                 local started = now > showtime.offset + 15 or show.past
-                local time_x = math.floor(show_x + (show_w-width)/2)
+                local time_x = math.floor(show_x + (slot_w - width) / 2)
+                local show_y_text = math.floor(show_y + (slot_h - slot_font) / 2 + slot_font * 0.05)
 
                 local color = {1,1,1,1}
 
@@ -512,11 +521,11 @@ local function show_bload()
                     color = {.5,.5,.5,1}
                 end
 
-                res.font:write(time_x, show_y, showtime.string, font_size, unpack(color))
+                res.font:write(time_x, show_y_text, showtime.string, slot_font, unpack(color))
 
                 if started then
                     strike_through_color:use{color = color}
-                    strike_through:draw(time_x-10, show_y+font_size/2-font_size*0.05, time_x+width+10, show_y+font_size/2-font_size*0.05+2, 1)
+                    strike_through:draw(time_x-10, show_y_text+slot_font/2-slot_font*0.05, time_x+width+10, show_y_text+slot_font/2-slot_font*0.05+2, 1)
                     strike_through_color:deactivate()
                 end
             end
