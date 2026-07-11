@@ -27,7 +27,7 @@
         }, {
             "title": "Rotation",
             "ui_width": 2,
-            "hint": "Screen rotates clock-wise",
+            "hint": "Portrait-mounted signs need 90° or 270° so the layout stacks vertically",
             "name": "rotation",
             "type": "select",
             "options": [

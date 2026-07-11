@@ -48,9 +48,7 @@ local function compute_layout()
     layout.poster_x1 = layout.poster_pad
     layout.poster_x2 = WIDTH - layout.poster_pad
     layout.poster_y2 = layout.poster_y + layout.poster_h
-    layout.badge_h = scale_y(117)
     layout.badge_w = scale_x(572)
-    layout.badge_y = scale_y(28)
     layout.movie_y = scale_y(780)
     layout.screen_y = scale_y(860)
     layout.bottom_y = scale_y(960)
@@ -95,9 +93,10 @@ local function draw_badge(text, upcoming)
     local pad_x = scale_x(28)
     local pad_y = scale_y(18)
     local box_w = math.min(layout.badge_w, text_w + pad_x * 2)
-    local box_h = math.max(layout.badge_h, size + pad_y * 2)
+    local box_h = size + pad_y * 2
     local x1 = (WIDTH - box_w) / 2
-    local y1 = layout.badge_y
+    -- Overlap the top edge of the poster, matching the reference layout
+    local y1 = layout.poster_y - box_h * 0.4
     local fill = upcoming and badge_green or badge_blue
 
     fill:draw(x1, y1, x1 + box_w, y1 + box_h)
@@ -181,7 +180,7 @@ local function draw_bottom_bar(show)
         y = ly1 + (size - layout.bottom_size) / 2
     end
 
-    local time_label = "Show time: " .. show_time
+    local time_label = "SHOW TIME: " .. show_time
     local time_w = font:width(time_label, layout.bottom_size)
     font:write(WIDTH - time_w - scale_x(40), y, time_label, layout.bottom_size, 1, 1, 1, 1)
 end
@@ -189,6 +188,19 @@ end
 util.file_watch("border.glsl", function(raw)
     border = resource.create_shader(raw)
 end)
+
+local function resolve_sign(signs, serial)
+    for idx = 1, #signs do
+        if signs[idx].serial == serial then
+            return signs[idx]
+        end
+    end
+    if #signs == 1 then
+        print("WARNING: device serial " .. serial .. " not in config; using the only configured sign")
+        return signs[1]
+    end
+    return nil
+end
 
 util.file_watch("config.json", function(raw)
     local config = json.decode(raw)
@@ -202,15 +214,15 @@ util.file_watch("config.json", function(raw)
     main_logo = resource.load_image(config.main_logo.asset_name)
     corner_logo = resource.load_image(config.corner_logo.asset_name)
 
-    for idx = 1, #config.signs do
-        local sign = config.signs[idx]
-        if sign.serial == my_serial then
-            indy_id = sign.indy_id
-            rotation = sign.rotation
-            debug = sign.debug
-        end
+    local sign = resolve_sign(config.signs, my_serial)
+    if sign then
+        indy_id = sign.indy_id
+        rotation = sign.rotation
+        debug = sign.debug
+    else
+        print("WARNING: no sign configured for device serial " .. my_serial)
     end
-    print("my screen indy id is " .. tostring(indy_id))
+    print("my screen indy id is " .. tostring(indy_id) .. ", rotation is " .. tostring(rotation))
 
     gl.setup(NATIVE_WIDTH, NATIVE_HEIGHT)
     st = util.screen_transform(rotation)
