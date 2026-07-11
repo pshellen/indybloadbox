@@ -12,12 +12,13 @@ local scissors = sys.get_ext "scissors"
 
 local st
 local image_files = {}
+local indy_poster_files = {}
 local loaded_images = {}
 local rotation = 0
 local bload_threshold = 3600
 local bload_fallback = resource.load_image "empty.png"
 local screen_idx, screen_cnt
-local logo
+local logo = mipmapped_image("flagship.png")
 
 local function mipmapped_image(filename)
     return resource.load_image(filename, true)
@@ -28,6 +29,24 @@ util.loaders.png = mipmapped_image
 local badge_3d = mipmapped_image("3D.png")
 local badge_green = resource.create_colored_texture(0.02, 0.55, 0.18, 1)
 local badge_blue = resource.create_colored_texture(2/255, 122/255, 193/255, 1)
+
+local function load_config_image(cfg_resource, fallback_name)
+    if cfg_resource and cfg_resource.asset_name then
+        local ok, handle = pcall(resource.open_file, cfg_resource.asset_name)
+        if ok and handle then
+            local ok_img, img = pcall(function()
+                return resource.load_image{
+                    file = handle,
+                    mipmap = true,
+                }
+            end)
+            if ok_img and img then
+                return img
+            end
+        end
+    end
+    return mipmapped_image(fallback_name)
+end
 
 local res = util.resource_loader({
     "font.ttf";
@@ -231,9 +250,11 @@ local bload = (function()
                 image = movie.image or movie.name:gsub('[^%w]', ''):lower(),
                 mpaa = movie.mpaa or "",
                 badges = movie.badges or {},
+                poster_file = movie.poster_file,
                 shows = shows,
             }
         end
+        loaded_images = {}
         movies_on_screen = #sorted_movies
         display_cfg.movies_per_page = data.movies_per_page or 4
         display_cfg.page_interval = data.page_interval or 5
@@ -304,6 +325,7 @@ end)()
 util.json_watch("config.json", function(config)
     image_files = {}
     loaded_images = {}
+    indy_poster_files = {}
 
     gl.setup(1920, 1080)
 
@@ -315,12 +337,18 @@ util.json_watch("config.json", function(config)
 
     st = util.screen_transform(rotation)
 
-    for _, image in ipairs(config.images) do
-        image_files[image.file.filename:lower():gsub('.jpg', ''):gsub('[^%w]', '')] = resource.open_file(image.file.asset_name)
+    for _, image in ipairs(config.images or {}) do
+        if image.file and image.file.asset_name then
+            local ok, handle = pcall(resource.open_file, image.file.asset_name)
+            if ok and handle then
+                local key = image.file.filename:lower():gsub('.jpg', ''):gsub('[^%w]', '')
+                image_files[key] = handle
+            end
+        end
     end
 
     bload_threshold = config.bload_threshold
-    bload_fallback = resource.load_image(config.bload_fallback.asset_name)
+    bload_fallback = load_config_image(config.bload_fallback, "empty.png")
 
     local split = config.__metadata.device_data.split
     if split then
@@ -331,10 +359,7 @@ util.json_watch("config.json", function(config)
         screen_cnt = 1
     end
 
-    logo = resource.load_image{
-        file = config.logo.asset_name,
-        mipmap = true,
-    }
+    logo = load_config_image(config.logo, "flagship.png")
 
     bload.force_parse()
 
@@ -345,6 +370,16 @@ util.file_watch("BLOAD.txt", bload.set_bload)
 
 util.json_watch("showings.json", function(data)
     bload.set_indy_showings(data)
+    for _, movie in ipairs(data.movies or {}) do
+        if movie.poster_file then
+            local key = movie.image or movie.name:gsub('[^%w]', ''):lower()
+            local ok, handle = pcall(resource.open_file, movie.poster_file)
+            if ok and handle then
+                indy_poster_files[key] = handle
+                loaded_images[key] = nil
+            end
+        end
+    end
 end)
 
 util.data_mapper{
@@ -408,7 +443,7 @@ local function show_bload()
             local split = math.min(cell_h-150, cell_h/1.5)
 
             local image
-            local file = image_files[movie.image]
+            local file = image_files[movie.image] or indy_poster_files[movie.image]
             if not cfg.hide_poster and file then
                 image = loaded_images[movie.image]
                 if not image then
@@ -579,7 +614,7 @@ local function show_bload()
                 end
             end
         else
-            if cfg.show_logo then
+            if cfg.show_logo and logo then
                 util.draw_correct(logo, x, y, x+cell_w, y+cell_h-1)
             else
                 bgfill:draw(x, y, x+cell_w, y+cell_h-1)

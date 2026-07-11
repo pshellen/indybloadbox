@@ -9,6 +9,7 @@ from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.filesystems import AbstractedFS, FilesystemError
 
 GRAPHQL = "https://api-us.indy.systems/graphql"
+POSTER_BASE = "https://signage-us.indy.systems/images/"
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
 
 class RestrictedFS(AbstractedFS):
@@ -173,6 +174,7 @@ def parse_indy_showings(site):
                 'name': name,
                 'image': ''.join(ch for ch in name.lower() if ch.isalnum()),
                 'mpaa': (movie.get('rating') or '').strip(),
+                'poster_id': (movie.get('posterImage') or '').strip(),
                 'badges': [],
                 'shows': [],
             }
@@ -195,6 +197,7 @@ def parse_indy_showings(site):
     sorted_movies = sorted(movies.values(), key=lambda m: m['name'].lower())
     for movie in sorted_movies:
         movie['shows'] = merge_showtimes(movie['shows'])
+    sync_posters(sorted_movies)
 
     return {
         'source': 'indy',
@@ -210,6 +213,32 @@ def parse_indy_showings(site):
 def write_showings(payload):
     with open('showings.json', 'wb') as f:
         f.write(json.dumps(payload, separators=(',', ':')))
+
+def sync_posters(movies):
+    scratch = os.environ.get('SCRATCH')
+    for movie in movies:
+        poster_id = movie.get('poster_id')
+        if not poster_id:
+            movie.pop('poster_file', None)
+            movie.pop('poster_url', None)
+            continue
+
+        slug = movie['image']
+        dest = '%s.png' % slug
+        url = POSTER_BASE + poster_id
+        try:
+            r = requests.get(url, timeout=20, headers={'User-Agent': UA})
+            r.raise_for_status()
+            with open(dest, 'wb') as f:
+                f.write(r.content)
+            if scratch:
+                shutil.copyfile(dest, os.path.join(scratch, dest))
+            movie['poster_file'] = dest
+            movie['poster_url'] = url
+        except Exception:
+            traceback.print_exc()
+            movie.pop('poster_file', None)
+            movie['poster_url'] = url
 
 def indy_site_id():
     return cfg('indy_site_id') or cfg('indy_screen_id')

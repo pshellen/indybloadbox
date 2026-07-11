@@ -19,6 +19,7 @@ PORT = 8765
 HOST = "0.0.0.0"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 GRAPHQL = "https://api-us.indy.systems/graphql"
+POSTER_BASE = "https://signage-us.indy.systems/images/"
 UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
@@ -113,6 +114,7 @@ def parse_indy_showings(site, options):
                 "name": name,
                 "image": "".join(ch for ch in name.lower() if ch.isalnum()),
                 "mpaa": (movie.get("rating") or "").strip(),
+                "poster_id": (movie.get("posterImage") or "").strip(),
                 "badges": [],
                 "shows": [],
             }
@@ -135,6 +137,9 @@ def parse_indy_showings(site, options):
     sorted_movies = sorted(movies.values(), key=lambda m: m["name"].lower())
     for movie in sorted_movies:
         movie["shows"] = merge_showtimes(movie["shows"])
+        poster_id = movie.get("poster_id")
+        if poster_id:
+            movie["poster_url"] = POSTER_BASE + poster_id
 
     return {
         "source": "indy",

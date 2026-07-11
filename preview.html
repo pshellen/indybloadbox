@@ -420,8 +420,9 @@
       const now = currentOffsetMinutes();
 
       let posterHtml;
-      if (!cfg.hide_poster && movie.poster) {
-        posterHtml = `<img alt="" src="${movie.poster}" />`;
+      if (!cfg.hide_poster && (movie.poster_url || movie.poster)) {
+        const src = movie.poster_url || movie.poster;
+        posterHtml = `<img alt="" src="${src}" />`;
       } else {
         const titleSize = fitTitle(movie.name, cellW);
         posterHtml = `<div class="title-fallback" style="font-size:${titleSize}px">${movie.name}</div>`;

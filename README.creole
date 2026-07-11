@@ -19,8 +19,10 @@ In the setup options:
 * **Hide past showings**: off (matches `hide-past=false`)
 
 The player polls the Indy GraphQL API and writes `showings.json` for the
-display. FTP remains available as an optional fallback if you set an FTP
-password and leave Indy disabled.
+display. When **Hide posters** is off, poster images are downloaded from
+Indy signage (`signage-us.indy.systems/images/...`) into the node directory.
+The **Logo** option uses the info-beamer asset picker (default `flagship.png`)
+and appears in empty grid cells when **Show logo in empty cells** is on.
 
 == Legacy FTP mode
 
