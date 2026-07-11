@@ -385,7 +385,7 @@
       <div class="screen-name" id="screenName"></div>
       <div class="bottom">
         <div class="bottom-left">
-          <img class="corner-logo" id="cornerLogo" src="flagship.png" alt="" />
+          <img class="corner-logo" id="mainLogo" src="flagship.png" alt="" />
         </div>
         <div id="showTime"></div>
       </div>
@@ -609,7 +609,7 @@
       title.textContent = movie.name;
       badge3d.classList.toggle("show", has3d);
       screenNameEl.textContent = (screenName || "").toUpperCase();
-      showTime.textContent = "SHOW TIME: " + formatTime(show.time);
+      showTime.textContent = "Show Start: " + formatTime(show.time);
     }
 
     function fillPicker(showings) {
