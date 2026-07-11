@@ -158,31 +158,27 @@ local function draw_bottom_bar(show)
     end
 
     local show_time = (show.start or ""):upper()
-    local y = layout.bottom_y
+    local pad = scale_y(8)
+    local size = layout.corner_size
+    local ly2 = HEIGHT - pad
+    local ly1 = ly2 - size
+    local text_y = ly1 + (size - layout.bottom_size) / 2
 
     if main_logo then
-        local size = layout.corner_size
-        local lx1 = scale_x(8)
-        local ly2 = HEIGHT - scale_y(8)
-        local ly1 = ly2 - size
         local lw, lh = main_logo:size()
         local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        main_logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
-        y = ly1 + (size - layout.bottom_size) / 2
+        main_logo:draw(scale_x(8) + ix1, ly1 + iy1, scale_x(8) + ix2, ly1 + iy2)
     elseif corner_logo then
-        local size = layout.corner_size
-        local lx1 = scale_x(8)
-        local ly2 = HEIGHT - scale_y(8)
-        local ly1 = ly2 - size
         local lw, lh = corner_logo:size()
         local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        corner_logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
-        y = ly1 + (size - layout.bottom_size) / 2
+        corner_logo:draw(scale_x(8) + ix1, ly1 + iy1, scale_x(8) + ix2, ly1 + iy2)
+    else
+        text_y = layout.bottom_y
     end
 
-    local time_label = "SHOW TIME: " .. show_time
+    local time_label = "Show Start: " .. show_time
     local time_w = font:width(time_label, layout.bottom_size)
-    font:write(WIDTH - time_w - scale_x(40), y, time_label, layout.bottom_size, 1, 1, 1, 1)
+    font:write(WIDTH - time_w - scale_x(40), text_y, time_label, layout.bottom_size, 1, 1, 1, 1)
 end
 
 util.file_watch("border.glsl", function(raw)
