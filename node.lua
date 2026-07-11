@@ -71,7 +71,7 @@ local function compute_layout()
 
     -- Keep a small physical safety margin at the bottom.
     local normal_footer_y = HEIGHT - safe_inset - layout.footer_h
-    local lowest_footer_y = HEIGHT - scale_y(24) - layout.footer_h
+    local lowest_footer_y = HEIGHT - scale_y(6) - layout.footer_h
 
     layout.footer_y = math.min(
         normal_footer_y + info_down,
