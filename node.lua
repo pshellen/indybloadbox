@@ -227,7 +227,6 @@ local bload = (function()
                 name = movie.name,
                 image = movie.image or movie.name:gsub('[^%w]', ''):lower(),
                 mpaa = movie.mpaa or "",
-                threed = movie.threed or false,
                 badges = movie.badges or {},
                 shows = shows,
             }
@@ -430,21 +429,15 @@ local function show_bload()
                 res.font:write(name_x, y+(split-size)/2, movie.name, size, 0,0,0,1)
             end
 
-            -- info line (rating + 3d logo + optional badges)
+            -- info line (rating + optional movie badges)
             local info_h = 50
             if cfg.display_badges and movie.badges and #movie.badges > 0 then
                 info_h = 72
             end
             infofill:draw(x+1, y+split, x+cell_w-1, y+split+info_h)
             local width = res.font:width(movie.mpaa, 30)
-            if movie.threed then
-                width = width + 70
-            end
             local info_x = x + (cell_w-width) / 2
-            info_x = info_x + res.font:write(info_x, y+split+10, movie.mpaa, 30, 0,0,0,1)
-            if movie.threed then
-                res.threed:draw(info_x + 10, y+split+10, info_x+60, y + split+40)
-            end
+            res.font:write(info_x, y+split+10, movie.mpaa, 30, 0,0,0,1)
             if cfg.display_badges and movie.badges and #movie.badges > 0 then
                 local badge_text = table.concat(movie.badges, "  ")
                 local badge_size = 16

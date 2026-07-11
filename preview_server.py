@@ -53,6 +53,31 @@ def show_badge_flags(badges):
     }
 
 
+def is_showtime_badge_label(label):
+    lower = label.lower()
+    return (
+        lower == "3d"
+        or lower.startswith("3d ")
+        or "sensory" in lower
+        or "open caption" in lower
+        or lower in ("oc", "open captions", "open captioning", "open captioned")
+    )
+
+
+def merge_showtimes(shows):
+    merged = {}
+    for show in shows:
+        key = show["offset"]
+        if key not in merged:
+            merged[key] = dict(show)
+            continue
+        existing = merged[key]
+        existing["threed"] = existing.get("threed") or show.get("threed")
+        existing["sensory"] = existing.get("sensory") or show.get("sensory")
+        existing["open_caption"] = existing.get("open_caption") or show.get("open_caption")
+    return sorted(merged.values(), key=lambda s: s["offset"])
+
+
 def showtime_parts(dt):
     hour, minute = dt.hour, dt.minute
     suffix = "am" if hour < 12 else "pm"
@@ -84,22 +109,19 @@ def parse_indy_showings(site, options):
         movie = show["movie"]
         name = movie["name"]
         if name not in movies:
-            badges = []
-            is_3d = False
-            for badge in show.get("showingBadges") or []:
-                label = (badge.get("displayName") or badge.get("title") or "").strip()
-                if label:
-                    badges.append(label)
-                if badge_is_3d(badge):
-                    is_3d = True
             movies[name] = {
                 "name": name,
                 "image": "".join(ch for ch in name.lower() if ch.isalnum()),
                 "mpaa": (movie.get("rating") or "").strip(),
-                "threed": is_3d,
-                "badges": badges,
+                "badges": [],
                 "shows": [],
             }
+
+        entry = movies[name]
+        for badge in show.get("showingBadges") or []:
+            label = (badge.get("displayName") or badge.get("title") or "").strip()
+            if label and not is_showtime_badge_label(label) and label not in entry["badges"]:
+                entry["badges"].append(label)
 
         dt = datetime.datetime.strptime(show["time"], "%Y-%m-%dT%H:%M:%SZ")
         dt = localize(dt, tz_name)
@@ -108,11 +130,11 @@ def parse_indy_showings(site, options):
         parts["seats"] = 100
         parts["sold"] = 0
         parts.update(show_badge_flags(show.get("showingBadges")))
-        movies[name]["shows"].append(parts)
+        entry["shows"].append(parts)
 
     sorted_movies = sorted(movies.values(), key=lambda m: m["name"].lower())
     for movie in sorted_movies:
-        movie["shows"].sort(key=lambda s: s["offset"])
+        movie["shows"] = merge_showtimes(movie["shows"])
 
     return {
         "source": "indy",

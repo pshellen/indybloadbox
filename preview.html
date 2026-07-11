@@ -199,6 +199,16 @@
       font-weight: 700;
       position: relative;
       line-height: 1;
+      padding: 2px;
+    }
+
+    .time-contents {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      max-width: 100%;
+      flex-wrap: nowrap;
     }
 
     .time.past { color: var(--text-past); }
@@ -404,10 +414,6 @@
         ? `<div class="badge-row">${movie.badges.join("  ")}</div>`
         : "";
 
-      const threeD = movie.threed
-        ? `<img class="badge-3d" src="threed.png" alt="3D" />`
-        : "";
-
       const times = movie.shows.map((show) => {
         let cls = "time";
         const started = now > show.offset + 15 || show.past;
@@ -416,7 +422,7 @@
         else if (show.seats <= 20) cls += " warn";
         const reserve = showtimeReserve(show, cfg, showH);
         const extras = showtimeExtras(show, cfg);
-        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, reserve)}px"><span>${show.string}</span>${extras}</div>`;
+        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, reserve)}px"><div class="time-contents"><span>${show.string}</span>${extras}</div></div>`;
       }).join("");
 
       return `
@@ -425,7 +431,6 @@
           <div class="info-line ${badgeHtml ? "has-badges" : ""}">
             <div class="info-top">
               <span>${movie.mpaa || "&nbsp;"}</span>
-              ${threeD}
             </div>
             ${badgeHtml}
           </div>
