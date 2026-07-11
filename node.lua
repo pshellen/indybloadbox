@@ -79,7 +79,7 @@ local function compute_layout()
     layout.top_logo_w = WIDTH * 0.55
     layout.top_logo_gap = short * 0.06
 
-    layout.poster_pad = scale_x(4)
+    layout.poster_pad = 0
     layout.poster_x1 = layout.poster_pad
     layout.poster_x2 = WIDTH - layout.poster_pad
     layout.poster_y = layout.top_logo_y + layout.top_logo_h + layout.top_logo_gap
