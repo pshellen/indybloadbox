@@ -64,7 +64,7 @@ local function compute_layout()
     -- Move the poster down slightly while moving the title, showtime,
     -- and screen number farther down.
     local poster_down = portrait and short * 0.020 or scale_y(8)
-    local info_down = portrait and short * 0.080 or scale_y(8)
+    local info_down = portrait and short * 0.100 or scale_y(8)
 
     -- Rotated portrait signs clip the logical bottom edge on the physical display.
     local safe_inset = portrait and math.max(scale_y(100), HEIGHT * 0.10) or scale_y(32)
