@@ -1,477 +1,557 @@
--- Copyright (C) 2016-2019 Florian Wesch <fw@info-beamer.com>
-
-gl.setup(NATIVE_WIDTH, NATIVE_HEIGHT)
+-- Copyright (C) 2015, 2017 Florian Wesch <fw@dividuum.de>
+-- All Rights Reserved.
+--
+-- Unauthorized copying of this file, via any medium is
+-- strictly prohibited. Proprietary and confidential.
 
 util.no_globals()
 
 local json = require "json"
-local matrix = require "matrix2d"
 
-local font = resource.load_font "font.ttf"
-local black = resource.create_colored_texture(0, 0, 0, 1)
-local badge_blue = resource.create_colored_texture(2/255, 122/255, 193/255, 1)
-local badge_green = resource.create_colored_texture(0.02, 0.55, 0.18, 1)
-local badge_3d = resource.load_image "3D.png"
+local scissors = sys.get_ext "scissors"
 
-local indy_id
-local screen = {name = ""}
-local local_time = ""
+local st
+local image_files = {}
+local loaded_images = {}
+local rotation = 0
+local bload_threshold = 3600
+local bload_fallback = resource.load_image "empty.png"
+local screen_idx, screen_cnt
+local logo
 
-local border
-local st, vid_scaler
-local portrait, rotation, main_logo, main_logo_name, corner_logo
-local debug = true
-local outdated = false
-local layout = {}
-
-local my_serial = sys.get_env "SERIAL"
-local scale = 1
-
-local REF_W, REF_H = 1920, 1080
-
-local function scale_x(x)
-    return x * WIDTH / REF_W
+local function mipmapped_image(filename)
+    return resource.load_image(filename, true)
 end
+util.loaders.jpg = mipmapped_image
+util.loaders.png = mipmapped_image
 
-local function scale_y(y)
-    return y * HEIGHT / REF_H
+local res = util.resource_loader({
+    "font.ttf";
+    "threed.png";
+    "showtime.png";
+}, {})
+
+local bgfill = resource.create_colored_texture(.5,.5,.5,1)
+local fgfill = resource.create_colored_texture(.1,.1,.1,1)
+local infofill = resource.create_colored_texture(1,1,1,1)
+
+local strike_through = resource.create_colored_texture(1,1,1,1)
+local strike_through_color = resource.create_shader[[
+    uniform sampler2D Texture;
+    varying vec2 TexCoord;
+    uniform vec4 color;
+    void main() {
+        gl_FragColor = texture2D(Texture, TexCoord) * color;
+    }
+]]
+
+local base_time = N.base_time or 0
+
+local function current_offset()
+    local time = base_time + sys.now()
+    local offset = (time % 86400) / 60
+    return offset
 end
-
-local function scale_s(s)
-    return s * math.min(WIDTH / REF_W, HEIGHT / REF_H)
-end
-
-local function compute_layout()
-    layout.poster_y = scale_y(56)
-    layout.poster_h = scale_y(700)
-    layout.poster_pad = scale_x(4)
-    layout.poster_x1 = layout.poster_pad
-    layout.poster_x2 = WIDTH - layout.poster_pad
-    layout.poster_y2 = layout.poster_y + layout.poster_h
-    layout.badge_h = scale_y(117)
-    layout.badge_w = scale_x(572)
-    layout.badge_y = scale_y(28)
-    layout.movie_y = scale_y(780)
-    layout.screen_y = scale_y(860)
-    layout.bottom_y = scale_y(960)
-    -- Size off the shorter side so portrait stays readable
-    local short = math.min(WIDTH, HEIGHT)
-    layout.corner_size = short * 0.18
-    layout.badge_3d_size = short * 0.09
-    layout.badge_size = scale_s(76.8)
-    if portrait then
-        layout.title_size = short * 0.08
-    else
-        layout.title_size = scale_s(64)
-    end
-    layout.bottom_size = short * 0.048
-end
-
-local function fit_text(text, max_size, max_width, min_size)
-    min_size = min_size or 16
-    local size = max_size
-    while size > min_size do
-        if font:width(text, size) <= max_width then
-            return size
-        end
-        size = size - 2
-    end
-    return min_size
-end
-
-local function draw_centered_text(text, y, size, max_width)
-    size = fit_text(text, size, max_width, 16)
-    local w = font:width(text, size)
-    font:write((WIDTH - w) / 2, y, text, size, 1, 1, 1, 1)
-end
-
-local function draw_badge(text, upcoming)
-    if not text or text == "" then
-        return
-    end
-
-    local size = fit_text(text, layout.badge_size, layout.badge_w - scale_x(40), 20)
-    local text_w = font:width(text, size)
-    local pad_x = scale_x(28)
-    local pad_y = scale_y(18)
-    local box_w = math.min(layout.badge_w, text_w + pad_x * 2)
-    local box_h = math.max(layout.badge_h, size + pad_y * 2)
-    local x1 = (WIDTH - box_w) / 2
-    local y1 = layout.badge_y
-    local fill = upcoming and badge_green or badge_blue
-
-    fill:draw(x1, y1, x1 + box_w, y1 + box_h)
-    font:write(x1 + (box_w - text_w) / 2, y1 + pad_y, text, size, 1, 1, 1, 1)
-end
-
-local function draw_title_row(show)
-    local title = show.name or ""
-    local size = layout.title_size
-    local max_w = WIDTH - scale_x(40)
-    local gap = scale_x(20)
-    local badge_w, badge_h = 0, 0
-
-    if show.is_3d and badge_3d then
-        local bw, bh = badge_3d:size()
-        badge_h = layout.badge_3d_size
-        badge_w = badge_h * (bw / math.max(bh, 1))
-        if badge_w > WIDTH * 0.22 then
-            badge_w = WIDTH * 0.22
-            badge_h = badge_w * (bh / math.max(bw, 1))
-        end
-        max_w = max_w - badge_w - gap
-    end
-
-    size = fit_text(title, size, max_w, 16)
-    local text_w = font:width(title, size)
-    local total_w = text_w
-    if badge_w > 0 then
-        total_w = total_w + gap + badge_w
-    end
-
-    local x = (WIDTH - total_w) / 2
-    local y = layout.movie_y
-
-    if badge_w > 0 then
-        local bw, bh = badge_3d:size()
-        local iy = y + (size - badge_h) / 2
-        local ix1, iy1, ix2, iy2 = util.scale_into(badge_w, badge_h, bw, bh)
-        badge_3d:draw(x + ix1, iy + iy1, x + ix2, iy + iy2)
-        x = x + badge_w + gap
-    end
-
-    font:write(x, y, title, size, 1, 1, 1, 1)
-end
-
-local function draw_show_info()
-    if not screen.show then
-        return
-    end
-    draw_badge(screen.show.status_label, screen.show.upcoming)
-    draw_title_row(screen.show)
-    draw_centered_text((screen.name or ""):upper(), layout.screen_y, layout.bottom_size, WIDTH - scale_x(40))
-    draw_bottom_bar(screen.show)
-end
-
-local function draw_bottom_bar(show)
-    if not show then
-        return
-    end
-
-    local show_time = (show.start or ""):upper()
-    local y = layout.bottom_y
-
-    if main_logo then
-        local size = layout.corner_size
-        local lx1 = scale_x(8)
-        local ly2 = HEIGHT - scale_y(8)
-        local ly1 = ly2 - size
-        local lw, lh = main_logo:size()
-        local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        main_logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
-        y = ly1 + (size - layout.bottom_size) / 2
-    elseif corner_logo then
-        local size = layout.corner_size
-        local lx1 = scale_x(8)
-        local ly2 = HEIGHT - scale_y(8)
-        local ly1 = ly2 - size
-        local lw, lh = corner_logo:size()
-        local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        corner_logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
-        y = ly1 + (size - layout.bottom_size) / 2
-    end
-
-    local time_label = "Show time: " .. show_time
-    local time_w = font:width(time_label, layout.bottom_size)
-    font:write(WIDTH - time_w - scale_x(40), y, time_label, layout.bottom_size, 1, 1, 1, 1)
-end
-
-util.file_watch("border.glsl", function(raw)
-    border = resource.create_shader(raw)
-end)
-
-util.file_watch("config.json", function(raw)
-    local config = json.decode(raw)
-    pp(config)
-
-    debug = false
-
-    indy_id = nil
-    rotation = 0
-    main_logo_name = config.main_logo.asset_name
-    main_logo = resource.load_image(config.main_logo.asset_name)
-    corner_logo = resource.load_image(config.corner_logo.asset_name)
-
-    for idx = 1, #config.signs do
-        local sign = config.signs[idx]
-        if sign.serial == my_serial then
-            indy_id = sign.indy_id
-            rotation = sign.rotation
-            debug = sign.debug
-        end
-    end
-    print("my screen indy id is " .. tostring(indy_id))
-
-    gl.setup(NATIVE_WIDTH, NATIVE_HEIGHT)
-    st = util.screen_transform(rotation)
-    print("screen size is " .. WIDTH .. "x" .. HEIGHT)
-
-    vid_scaler = matrix.trans(NATIVE_WIDTH/2, NATIVE_HEIGHT/2) *
-                 matrix.scale(scale, scale) *
-                 matrix.trans(-NATIVE_WIDTH/2, -NATIVE_HEIGHT/2)
-
-    portrait = rotation == 90 or rotation == 270
-    compute_layout()
-end)
-
-util.json_watch("screen.json", function(new_screen)
-    screen = new_screen
-end)
 
 util.data_mapper{
-    ["time/set"] = function(new_local_time)
-        local_time = new_local_time
+    ["clock/set"] = function(time)
+        print("time set to", time)
+        base_time = tonumber(time) - sys.now()
+        N.base_time = base_time
+        print("CURRENT OFFSET is now", current_offset())
     end;
 }
 
-local function get_assets()
-    if not screen.show then
-        return {{
-            media = {
-                asset_name = main_logo_name,
-                type = "fallback",
-            },
-            duration = 5
-        }}
-    end
-
-    return {{
-        media = {
-            asset_name = screen.show.poster_file,
-            type = screen.show.media_type or "image",
-        },
-        duration = 86400
-    }}
-end
-
-local function fitted_poster_rect(media_w, media_h)
-    local area_x1, area_y1 = layout.poster_x1, layout.poster_y
-    local area_w = layout.poster_x2 - layout.poster_x1
-    local area_h = layout.poster_y2 - layout.poster_y
-    local ix1, iy1, ix2, iy2 = util.scale_into(area_w, area_h, media_w, media_h)
-    return area_x1 + ix1, area_y1 + iy1, area_x1 + ix2, area_y1 + iy2
-end
-
-local function draw_hugged_poster(media_w, media_h, draw_media)
-    local x1, y1, x2, y2 = fitted_poster_rect(media_w, media_h)
-    local border_color = {0.45, 0.78, 1.0, 1.0}
-    if screen.show and screen.show.color then
-        border_color = screen.show.color
-    end
-    border:use{
-        size = {media_w, media_h},
-        radius = scale_s(22),
-        border = scale_x(8),
-        borderColor = border_color,
-        time = 0,
+local bload = (function()
+    local display_cfg = {
+        movies_per_page = 4,
+        page_interval = 5,
+        hide_poster = true,
+        display_badges = true,
+        show_logo = false,
     }
-    draw_media(x1, y1, x2, y2)
-    border:deactivate()
-end
-
-local function Fallback(asset_name, duration)
-    local obj = resource.load_image(asset_name)
-    local started
-
-    local function start()
-        started = sys.now()
+    local data_source = "bload"
+    local function strip(s)
+        return s:match "^%s*(.-)%s*$"
     end
-    local function draw()
-        local w, h = obj:size()
-        local max_w = scale_x(500)
-        local max_h = scale_y(220)
-        local box_x = (WIDTH - max_w) / 2
-        local box_y = (HEIGHT - max_h) / 2
-        black:draw(0, 0, WIDTH, HEIGHT)
-        local x1, y1, x2, y2 = util.scale_into(max_w, max_h, w, h)
-        obj:draw(box_x + x1, box_y + y1, box_x + x2, box_y + y2)
-        return sys.now() - started > duration
+
+    -- Sometimes the name has another numerical suffix. Throw that away.
+    local function strip_name(s)
+        return strip(s:sub(1, 29))
     end
-    local function unload()
-        obj:dispose()
+
+    local function hhmm(s)
+        local hour, minute = s:match("(..)(..)")
+        local hour, minute = tonumber(hour), tonumber(minute)
+        local function mil2ampm(hour, minute)
+            local suffix = hour < 12 and "am" or ""
+            return ("%d:%02d%s"):format((hour-1) % 12 +1, minute, suffix)
+        end
+        return {
+            hour = hour,
+            minute = minute,
+            offset = hour * 60 + minute,
+            string = mil2ampm(hour, minute),
+        }
     end
-    return {
-        start = start;
-        draw = draw;
-        unload = unload;
-    }
-end
-
-local function Image(asset_name, duration)
-    print("started new image " .. asset_name)
-    local obj = resource.load_image(asset_name)
-    local started
-
-    local function start()
-        started = sys.now()
+    local function tobool(str)
+        return tonumber(str) == 1
     end
-    local function draw()
-        black:draw(0, 0, WIDTH, HEIGHT)
 
-        local w, h = obj:size()
-        draw_hugged_poster(w, h, function(x1, y1, x2, y2)
-            obj:draw(x1, y1, x2, y2)
-        end)
+    local function convert(names, fixups, ...)
+        local cols = {...}
+        local out = {}
+        for i = 1, #fixups do
+            out[names[i]] = fixups[i](cols[i])
+        end
+        return out
+    end
 
-        if screen.show then
-            draw_show_info()
+    local sorted_movies = {}
+    local movies_on_screen = 1
+    local bload, date
+
+    local function parse_bload()
+        if not date or not bload then
+            print("cannot parse yet. no bload or no date")
+            return
         end
 
-        return sys.now() - started > duration
-    end
-    local function unload()
-        obj:dispose()
-    end
-    return {
-        start = start;
-        draw = draw;
-        unload = unload;
-    }
-end
+        local movies = {}
+        for line in bload:gmatch("[^\r\n]+") do
+            -- "123456789012345678901234567890123456789012345678901234567890123456789012345"
+            -- "1111111122 33 4444 555  6666 7777 8 9999AAAAAAAAAAAAAAAAAAAAAAAAAAAAA     B"
+            -- "06/25/151  1  1320 94   10   231  0     Inside Out                        0"
 
-local function Video(asset_name)
-    print("started new video " .. asset_name)
-    local file = resource.open_file(asset_name)
-    local obj
+            local single_day = true
+            local row
 
-    local function start()
-    end
-    local function draw()
-        black:draw(0, 0, WIDTH, HEIGHT)
-
-        if not obj then
-            obj = resource.load_video{
-                file = file;
-                raw = true;
-            }
-        end
-
-        local state, vw, vh = obj:state()
-        if state == "finished" then
-            obj:dispose()
-            obj = nil
-        elseif state == "loaded" then
-            draw_hugged_poster(vw, vh, function(x1, y1, x2, y2)
-                obj:place(x1, y1, x2, y2)
-            end)
-        end
-
-        if screen.show then
-            draw_show_info()
-        end
-
-        return false
-    end
-
-    local function unload()
-        if obj then
-            obj:dispose()
-        end
-    end
-    return {
-        start = start;
-        draw = draw;
-        unload = unload;
-    }
-end
-
-local function Player()
-    local offset = 0
-    local current = Fallback(main_logo_name, 5)
-    local next
-    local current_key = ""
-
-    local function asset_key()
-        if not screen.show or screen.show.poster_file == "" then
-            return "fallback:" .. main_logo_name
-        end
-        return (screen.show.media_type or "image") .. ":" .. screen.show.poster_file
-    end
-
-    current.start()
-    current_key = asset_key()
-
-    local function draw()
-        local key = asset_key()
-        if key ~= current_key then
-            current.unload()
-            current_key = key
-            next = nil
-            offset = 0
-            current = Fallback(main_logo_name, 5)
-            current.start()
-        end
-
-        if not next then
-            local assets = get_assets()
-            offset = offset + 1
-            if offset > #assets then
-                offset = 1
+            if single_day then 
+                row = convert(
+                    {"screen", "show",   "showtime", "runtime", "sold",   "seats",  "threed", "mpaa", "name"},
+                    {strip,    tonumber, hhmm,       tonumber,  tonumber, tonumber, tobool,   strip,  strip},
+                    line:match("(..) (..) (....) (...)  (....) (....) (.) (....)(.*)")
+                )
+            else
+                row = convert(
+                    {"date","screen", "show",   "showtime", "runtime", "sold",   "seats",  "threed", "mpaa", "name"},
+                    {strip, strip,    tonumber, hhmm,       tonumber,  tonumber, tonumber, tobool,   strip,  strip_name},
+                    line:match("(........)(..) (..) (....) (...)  (....) (....) (.) (....)(.*)")
+                )
             end
 
-            local asset = assets[offset]
-            next = ({
-                image = Image;
-                video = Video;
-                fallback = Fallback;
-            })[asset.media.type](asset.media.asset_name, asset.duration)
+            if single_day or row.date == date then
+                if not movies[row.name] then
+                    movies[row.name] = {}
+                end
+
+                local movie = movies[row.name]
+                movie[#movie+1] = {
+                    mpaa = row.mpaa,
+                    threed = row.threed,
+                    showtime = row.showtime,
+                    seats = row.seats,
+                    sold = row.sold,
+                }
+            end
         end
 
-        local ended = current.draw()
-
-        if ended then
-            current.unload()
-            current = next
-            next = nil
-            current.start()
+        local pre_sorted_movies = {}
+        for name, shows in pairs(movies) do
+            table.sort(shows, function(a, b)
+                return a.showtime.offset < b.showtime.offset
+            end)
+            local mpaa = shows[1].mpaa
+            local threed = shows[1].threed
+            pre_sorted_movies[#pre_sorted_movies+1] = {
+                name = name,
+                image = name:gsub('[^%w]', ''):lower(),     
+                mpaa = mpaa,
+                threed = threed,
+                shows = shows,
+            }
         end
+        table.sort(pre_sorted_movies, function(a, b)
+            return a.name < b.name
+        end)
+
+        movies_on_screen = math.ceil(
+            #pre_sorted_movies / screen_cnt
+        )
+        local split_start = movies_on_screen * (screen_idx - 1) + 1
+        local split_end = split_start + movies_on_screen - 1
+        print(#pre_sorted_movies, split_start, split_end)
+
+        sorted_movies = {}
+        for idx, movie in ipairs(pre_sorted_movies) do
+            if idx >= split_start and idx <= split_end then
+                sorted_movies[#sorted_movies+1] = movie
+            end
+        end
+
+        -- pp(sorted_movies)
+    end
+
+    local function normalize_show(show)
+        if show.showtime then
+            return show
+        end
+        return {
+            showtime = {
+                hour = show.hour,
+                minute = show.minute,
+                offset = show.offset,
+                string = show.string,
+            },
+            seats = show.seats or 100,
+            sold = show.sold or 0,
+            past = show.past,
+        }
+    end
+
+    local function set_indy_showings(data)
+        sorted_movies = {}
+        for _, movie in ipairs(data.movies or {}) do
+            local shows = {}
+            for _, show in ipairs(movie.shows or {}) do
+                shows[#shows+1] = normalize_show(show)
+            end
+            sorted_movies[#sorted_movies+1] = {
+                name = movie.name,
+                image = movie.image or movie.name:gsub('[^%w]', ''):lower(),
+                mpaa = movie.mpaa or "",
+                threed = movie.threed or false,
+                badges = movie.badges or {},
+                shows = shows,
+            }
+        end
+        movies_on_screen = #sorted_movies
+        display_cfg.movies_per_page = data.movies_per_page or 4
+        display_cfg.page_interval = data.page_interval or 5
+        display_cfg.hide_poster = data.hide_poster ~= false
+        display_cfg.display_badges = data.display_badges ~= false
+        display_cfg.show_logo = data.show_logo == true
+        data_source = "indy"
+    end
+
+    local function get_paged_movies()
+        local per_page = display_cfg.movies_per_page or 4
+        if data_source ~= "indy" or #sorted_movies <= per_page then
+            return sorted_movies, math.max(#sorted_movies, 1)
+        end
+        local pages = math.max(1, math.ceil(#sorted_movies / per_page))
+        local interval = math.max(1, display_cfg.page_interval or 5)
+        local page = math.floor(sys.now() / interval) % pages
+        local start_idx = page * per_page + 1
+        local out = {}
+        for i = start_idx, math.min(start_idx + per_page - 1, #sorted_movies) do
+            out[#out+1] = sorted_movies[i]
+        end
+        return out, per_page
+    end
+
+    local function get_display_cfg()
+        return display_cfg
+    end
+
+    local function get_data_source()
+        return data_source
+    end
+
+    local function get_sorted_movies()
+        return sorted_movies
+    end
+
+    local function set_bload(new_bload)
+        if new_bload == bload then return end
+        bload = new_bload
+        return parse_bload()
+    end
+
+    local function set_date(new_date)
+        if new_date == date then return end
+        date = new_date
+        return parse_bload()
+    end
+
+    local function get_movies_on_screen()
+        return movies_on_screen
     end
 
     return {
-        draw = draw;
+        set_bload = set_bload;
+        set_date = set_date;
+        set_indy_showings = set_indy_showings;
+        force_parse = parse_bload;
+
+        get_sorted_movies = get_sorted_movies;
+        get_paged_movies = get_paged_movies;
+        get_movies_on_screen = get_movies_on_screen;
+        get_display_cfg = get_display_cfg;
+        get_data_source = get_data_source;
     }
-end
+end)()
 
-local player = Player()
+util.json_watch("config.json", function(config)
+    image_files = {}
+    loaded_images = {}
 
-function node.render()
-    gl.clear(0, 0, 0, 1)
-    st()
+    gl.setup(1920, 1080)
 
-    gl.translate(WIDTH/2, HEIGHT/2)
-    gl.scale(scale, scale)
-    gl.translate(-WIDTH/2, -HEIGHT/2)
-
-    player.draw()
-
-    if not indy_id then
-        font:write(WIDTH/2-120, HEIGHT/2+140, "NO SCREEN CONFIGURED", 24, 1,1,1,.1)
-        font:write(WIDTH/2-60, HEIGHT/2+165, my_serial, 20, 1,1,1,.1)
-        return
-    elseif outdated then
-        font:write(WIDTH/2-110, HEIGHT/2+140, "NO RECENT SCHEDULE", 24, 1,1,1,.1)
-        font:write(WIDTH/2-60, HEIGHT/2+165, my_serial, 20, 1,1,1,.1)
-        return
+    rotation = config.rotation or 0
+    local setup_rotation = config.__metadata.device_data.rotation
+    if setup_rotation and setup_rotation ~= -1 then
+        rotation = setup_rotation
     end
 
-    if debug then
-        local x, y = WIDTH-250, 10
-        font:write(x, y, "Serial: " .. my_serial, 12, 1,1,1,1); y=y+12
-        font:write(x, y, ("Time: %s"):format(local_time), 12, 1,1,1,1); y=y+12
-        if screen.show then
-            font:write(x, y, "Show: "..screen.show.name, 12, 1,1,1,1); y=y+12
-            font:write(x, y, "Status: "..(screen.show.status_label or ""), 12, 1,1,1,1); y=y+12
-            font:write(x, y, "Media: "..(screen.show.media_type or ""), 12, 1,1,1,1); y=y+12
+    st = util.screen_transform(rotation)
+
+    for _, image in ipairs(config.images) do
+        image_files[image.file.filename:lower():gsub('.jpg', ''):gsub('[^%w]', '')] = resource.open_file(image.file.asset_name)
+    end
+
+    bload_threshold = config.bload_threshold
+    bload_fallback = resource.load_image(config.bload_fallback.asset_name)
+
+    local split = config.__metadata.device_data.split
+    if split then
+        screen_idx = split[1]
+        screen_cnt = split[2]
+    else
+        screen_idx = 1
+        screen_cnt = 1
+    end
+
+    logo = resource.load_image{
+        file = config.logo.asset_name,
+        mipmap = true,
+    }
+
+    bload.force_parse()
+
+    node.gc()
+end)
+
+util.file_watch("BLOAD.txt", bload.set_bload)
+
+util.json_watch("showings.json", function(data)
+    bload.set_indy_showings(data)
+end)
+
+util.data_mapper{
+    ["date/set"] = function(date)
+        print("date set to", date)
+        bload.set_date(date)
+    end;
+    ["source/set"] = function(src)
+        if src == "indy" then
+            bload_age = 0
         end
+    end;
+}
+
+local function layouter(rotation, num_shows)
+    if rotation == 90 or rotation == 270 then
+        if num_shows <= 3 then
+            return 1, 3
+        elseif num_shows <= 8 then
+            return 2, 4
+        elseif num_shows <= 10 then
+            return 2, 5
+        elseif num_shows <= 15 then
+            return 3, 5
+        else
+            return 3, 6
+        end
+    else
+        if num_shows <= 4 then
+            return 2, 2
+        elseif num_shows <= 6 then
+            return 3, 2
+        elseif num_shows <= 9 then
+            return 3, 3
+        elseif num_shows <= 12 then
+            return 4, 3
+        elseif num_shows <= 16 then
+            return 4, 4
+        else
+            return 5, 4
+        end
+    end
+end
+
+local function show_bload()
+    local cfg = bload.get_display_cfg()
+    local movies, page_size = bload.get_paged_movies()
+
+    local cols, rows = layouter(rotation, math.max(page_size, #movies))
+
+    local cell_w = WIDTH / cols
+    local cell_h = HEIGHT / rows
+    local now = current_offset()
+
+    for idx = 1, #movies+1 do
+        local x = (idx - 1)%cols * (cell_w)
+        local y = math.floor((idx - 1)/cols) * cell_h
+        local movie = movies[idx]
+        if movie then
+            bgfill:draw(x, y, x+cell_w, y+cell_h)
+            local split = math.min(cell_h-150, cell_h/1.5)
+
+            local image
+            local file = image_files[movie.image]
+            if not cfg.hide_poster and file then
+                image = loaded_images[movie.image]
+                if not image then
+                    print("loading image", movie.image)
+                    loaded_images[movie.image] = resource.load_image{
+                        file = file:copy(),
+                    }
+                end
+            end
+
+            if image then
+                image:draw(x+1, y+1, x+cell_w-1, y+split)
+            else
+                local width = 99999
+                local size = 60
+                while width > cell_w -5 do
+                    size = size - 5
+                    width = res.font:width(movie.name, size)
+                end
+                local name_x = x + (cell_w-width) / 2
+                res.font:write(name_x, y+(split-size)/2, movie.name, size, 0,0,0,1)
+            end
+
+            -- info line (rating + 3d logo + optional badges)
+            local info_h = 50
+            if cfg.display_badges and movie.badges and #movie.badges > 0 then
+                info_h = 72
+            end
+            infofill:draw(x+1, y+split, x+cell_w-1, y+split+info_h)
+            local width = res.font:width(movie.mpaa, 30)
+            if movie.threed then
+                width = width + 70
+            end
+            local info_x = x + (cell_w-width) / 2
+            info_x = info_x + res.font:write(info_x, y+split+10, movie.mpaa, 30, 0,0,0,1)
+            if movie.threed then
+                res.threed:draw(info_x + 10, y+split+10, info_x+60, y + split+40)
+            end
+            if cfg.display_badges and movie.badges and #movie.badges > 0 then
+                local badge_text = table.concat(movie.badges, "  ")
+                local badge_size = 16
+                while badge_size > 10 and res.font:width(badge_text, badge_size) > cell_w - 10 do
+                    badge_size = badge_size - 1
+                end
+                local badge_w = res.font:width(badge_text, badge_size)
+                res.font:write(x + (cell_w-badge_w)/2, y+split+38, badge_text, badge_size, 0,0,0,1)
+            end
+
+            -- showtime box
+            fgfill:draw(x+1, y+split+info_h+1, x+cell_w-1, y+cell_h-1)
+            local time_cols, time_rows, font_size
+            if #movie.shows <= 1 then
+                time_cols = 1
+                time_rows = 1
+            elseif #movie.shows <= 2 then
+                time_cols = 2
+                time_rows = 1
+            elseif #movie.shows <= 4 then
+                time_cols = 2
+                time_rows = 2
+            elseif #movie.shows <= 6 then
+                time_cols = 3
+                time_rows = 2
+            elseif #movie.shows <= 9 then
+                time_cols = 3
+                time_rows = 3
+            elseif #movie.shows <= 15 then
+                time_cols = 5
+                time_rows = 3
+            elseif #movie.shows <= 18 then
+                time_cols = 6
+                time_rows = 3
+            elseif #movie.shows <= 20 then
+                time_cols = 5
+                time_rows = 4
+            elseif #movie.shows <= 24 then
+                time_cols = 6
+                time_rows = 4
+            else -- 30 MAX
+                time_cols = 6
+                time_rows = 5
+            end
+            font_size = math.floor(math.min(
+                cell_w / time_cols / 4.2,
+                cell_h / time_rows / 4.2
+            ))
+
+            local show_w = math.floor(cell_w/time_cols)
+            local show_h = math.floor((cell_h - (split+info_h))/time_rows)
+            for si = 1, #movie.shows do
+                local show = movie.shows[si]
+                local show_x = math.floor(x+1 + (si-1)%time_cols * show_w)
+                local show_y = math.floor(
+                    y+split+info_h+1+math.floor((si-1)/time_cols) * show_h + (show_h-font_size)/2 + font_size*0.05)
+
+                local showtime = show.showtime
+                local width = res.font:width(showtime.string, font_size)
+                local started = now > showtime.offset + 15 or show.past
+                local time_x = math.floor(show_x + (show_w-width)/2)
+
+                local color = {1,1,1,1}
+
+                if show.seats == 0 then
+                    color[1], color[2], color[3] = 1, .2, .2
+                elseif show.seats <= 20 then
+                    color[1], color[2], color[3] = 1, .8, .2
+                end
+
+                if started then
+                    color = {.5,.5,.5,1}
+                end
+
+                res.font:write(time_x, show_y, showtime.string, font_size, unpack(color))
+
+                if started then
+                    strike_through_color:use{color = color}
+                    strike_through:draw(time_x-10, show_y+font_size/2-font_size*0.05, time_x+width+10, show_y+font_size/2-font_size*0.05+2, 1)
+                    strike_through_color:deactivate()
+                end
+            end
+        else
+            if cfg.show_logo then
+                util.draw_correct(logo, x, y, x+cell_w, y+cell_h-1)
+            else
+                bgfill:draw(x, y, x+cell_w, y+cell_h-1)
+            end
+        end
+    end
+end
+
+local bload_age = 0
+
+util.data_mapper{
+    ["age/set"] = function(age)
+        bload_age = tonumber(age)
+    end;
+}
+
+local function show_fallback()
+    util.draw_correct(bload_fallback, 0, 0, WIDTH, HEIGHT)
+end
+
+function node.render()
+    gl.clear(0,0,0,1)
+    st()
+
+    local movies = bload.get_paged_movies()
+    local stale = bload.get_data_source() ~= "indy" and bload_age > bload_threshold
+
+    if #movies == 0 or stale then
+        show_fallback()
+    else
+        show_bload()
     end
 end

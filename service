@@ -1,244 +1,235 @@
 #!/usr/bin/python2.7
-import sys, pytz, time, threading, os, traceback, requests, json, calendar, tempfile
-from itertools import tee, islice, chain
-from datetime import datetime
-from hosted import config, node, device
-config.restart_on_update()
+import datetime, pytz, time, threading, os, logging, shutil, traceback, json, requests
+from hosted import CONFIG, NODE
+CONFIG.restart_on_update()
 
-DEVICE_TZ = pytz.timezone(config.metadata['timezone'])
+from pyftpdlib.handlers import FTPHandler
+from pyftpdlib.servers import FTPServer
+from pyftpdlib.authorizers import DummyAuthorizer
+from pyftpdlib.filesystems import AbstractedFS, FilesystemError
 
-#  Message-Id: <1465504497.2051037.633156353.268DA54A@webmail.messagingengine.com>
-#  Message-Id: <CAHCqjYM87qcOTtXTJO-ZcV835q6P2SPa7=mW2ZkSbWmD_h7MOA@mail.gmail.com>
-#  In minutes
-BEFORE_FIRST_SHOW = 60
-BEFORE_OTHER_SHOWS = 30
-UPCOMING_MINUTES = 25
-
-COLOR_NOW = (0.45, 0.78, 1.0, 1.0)      # light blue border / badge
-COLOR_UPCOMING = (0.02, 0.55, 0.18, 1.0) # green
-
-IMGIX_BASE = "https://indy-systems.imgix.net/" 
+GRAPHQL = "https://api-us.indy.systems/graphql"
 UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
 
-def localize(dt):
-    unix = calendar.timegm(dt.timetuple())
-    dt = dt.replace(tzinfo=pytz.utc)
-    dt = dt.astimezone(DEVICE_TZ)
-    dt = dt.replace(tzinfo=None)
-    return dt, unix
+class RestrictedFS(AbstractedFS):
+    def can_access(self, filename):
+        return filename == "BLOAD.txt"
 
-def pairwise(iterable):
-    a, b = tee(iterable)
-    b = chain(islice(b, 1, None), [None])
-    return zip(a, b)
+    def open(self, filename, mode):
+        if not self.can_access(os.path.basename(filename)):
+            raise FilesystemError("Cannot access %s. Only BLOAD.txt can be modified" % (
+                os.path.basename(filename)))
+        if 'w' in mode:
+            filename += ".temp"
+        return super(RestrictedFS, self).open(filename, mode)
+
+    def remove(self, path):
+        if self.can_access(os.path.basename(path)):
+            super(RestrictedFS, self).remove(path)
+
+    def listdir(self, path):
+        return [
+            filename for filename
+            in super(RestrictedFS, self).listdir(path)
+            if self.can_access(filename)
+        ]
+
+class MyHandler(FTPHandler):
+    def on_file_received(self, file):
+        target = file.replace(".temp", "")
+        with open(file, 'rb') as f:
+            bload = f.read().decode('windows-1252')
+        with open(file, 'wb') as f:
+            f.write(bload.encode('utf8'))
+        os.rename(file, target)
+        shutil.copyfile(target, os.path.join(os.environ['SCRATCH'], os.path.basename(target)))
+        os.system("sync")
+
+    def on_incomplete_file_received(self, file):
+        os.remove(file)
+
+def cfg(name, default=None):
+    try:
+        return CONFIG[name]
+    except KeyError:
+        return default
+
+def current_time():
+    now = datetime.datetime.utcnow()
+    now = now.replace(tzinfo=pytz.utc)
+    now = now.astimezone(pytz.timezone(CONFIG['timezone']))
+    now = now.replace(tzinfo=None)
+    return now.strftime("%m/%d/%y"), now
 
 def send_clock():
-    node.send('/time/set:%s' % (
-        localize(datetime.utcnow())[0].strftime("%H:%M"),
-    ))
+    date, now = current_time()
+    NODE.send('/date/set:%s' % date)
 
-def fetch_into(src, dst):
-    if os.path.exists(dst):
-        return dst
+    since_midnight = (
+        now -
+        now.replace(hour=0, minute=0, second=0, microsecond=0)
+    )
+    seconds_since_midnight = since_midnight.seconds + since_midnight.microseconds / 1000000.
+    NODE.send('/clock/set:%d' % seconds_since_midnight)
+
     try:
-        r = requests.get(
-            src,
-            headers = {
-                'User-Agent': UA,
-            },
-            timeout = 10,
-        )
-        r.raise_for_status()
-        with tempfile.NamedTemporaryFile(dir=os.getcwd()) as tmp:
-            tmp.write(r.content)
-            tmp.flush()
-            os.rename(tmp.name, dst)
-            tmp.delete = False
-        return dst
-    except Exception as err:
-        traceback.print_exc()
-        time.sleep(30) # enforce minimum error delay
-        return None
+        s = os.stat("BLOAD.txt")
+        bload_age = time.time() - s.st_mtime
+        NODE.send('/age/set:%d' % bload_age)
+    except:
+        pass
 
 def fetch_indy(screen_id):
-    try:
-        r = requests.post(
-            "https://api-us.indy.systems/graphql", 
-            headers = {
-                'User-Agent': UA,
-                'Accept': 'application/graphql-response+json',
-                'Content-Type': 'application/json',
-            },
-            timeout = 5,
-            data = '''
-                {"query": "{ screen(id: \\"%d\\") {name todaysShowings { time current past showingBadges { id title displayName } movie { name posterImage animatedPosterVideo showingStatus duration rating ratingReason }}}}"}
-            '''.strip() % (screen_id,)
-        )
-        r.raise_for_status()
-        return r.json()['data']['screen']
-    except Exception as err:
-        traceback.print_exc()
-        time.sleep(30) # enforce minimum error delay
-        return None
+    r = requests.post(
+        GRAPHQL,
+        headers={
+            'User-Agent': UA,
+            'Accept': 'application/graphql-response+json',
+            'Content-Type': 'application/json',
+        },
+        timeout=10,
+        data=json.dumps({
+            'query': (
+                '{ screen(id: "%s") { name todaysShowings { time current past '
+                'showingBadges { id title displayName } '
+                'movie { name rating ratingReason posterImage } } } }'
+            ) % screen_id,
+        }),
+    )
+    r.raise_for_status()
+    payload = r.json()
+    return payload['data']['screen']
 
-def parse_indy(screen):
-    now = time.time()
+def badge_is_3d(badge):
+    title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
+    return title == '3d' or title.startswith('3d ') or ' 3d' in title
 
-    def iter_shows():
-        for show in screen['todaysShowings']:
-            start, unix = localize(datetime.strptime(show['time'], "%Y-%m-%dT%H:%M:%SZ"))
-            poster = show['movie']['posterImage']
-            animated = show['movie'].get('animatedPosterVideo')
-            poster_file = ""
-            media_type = "image"
-
-            if animated:
-                poster_file = fetch_into(
-                    src = '%s/%s?auto=format,compress' % (IMGIX_BASE, animated),
-                    dst = 'motion-%s.mp4' % animated,
-                )
-                if poster_file:
-                    media_type = "video"
-
-            if not poster_file and poster:
-                poster_file = fetch_into(
-                    src = '%s/%s?fit=crop&w=1000&h=1500&fm=jpeg&auto=format,compress&cs=origin' % (IMGIX_BASE, poster),
-                    dst = 'poster-%s.jpg' % poster,
-                )
-
-            status = show['movie'].get('showingStatus') or ''
-
-            is_3d = False
-            for badge in (show.get('showingBadges') or []):
-                title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
-                if title == '3d' or title.startswith('3d ') or ' 3d' in title:
-                    is_3d = True
-                    break
-
-            yield dict(
-                unix = unix,
-                start = start.strftime("%-I:%M %p").upper(),
-                past = show['past'],
-                current = show['current'],
-                name = show['movie']['name'],
-                rating = show['movie'].get('rating') or '',
-                rating_reason = show['movie'].get('ratingReason') or '',
-                runtime = show['movie']['duration'],
-                status = status,
-                status_label = status.upper(),
-                is_3d = is_3d,
-                upcoming = False,
-                color = COLOR_NOW,
-                poster_file = poster_file or "",
-                media_type = media_type,
-            )
-
-    shows = list(iter_shows())
-    out = {
-        'name': screen['name'],
+def showtime_parts(dt):
+    hour, minute = dt.hour, dt.minute
+    suffix = 'am' if hour < 12 else 'pm'
+    display_hour = (hour - 1) % 12 + 1
+    return {
+        'hour': hour,
+        'minute': minute,
+        'offset': hour * 60 + minute,
+        'string': '%d:%02d%s' % (display_hour, minute, suffix),
     }
 
-    def show_end(idx):
-        show = shows[idx]
-        if idx + 1 < len(shows):
-            return shows[idx + 1]['unix']
-        runtime = show.get('runtime') or 120
-        return show['unix'] + runtime * 60
+def parse_indy_showings(screen):
+    tz = pytz.timezone(CONFIG['timezone'])
+    hide_past = cfg('hide_past', False)
+    movies = {}
 
-    # 1) Upcoming window: 25 minutes before start until start
-    for idx, show in enumerate(shows):
-        upcoming_from = show['unix'] - UPCOMING_MINUTES * 60
-        if upcoming_from <= now < show['unix']:
-            show = dict(show)
-            show['upcoming'] = True
-            show['status_label'] = 'NEXT SHOWING'
-            show['color'] = COLOR_UPCOMING
-            out['show'] = show
-            return out
-
-    # 2) Playing window: start until next show (or start + runtime)
-    for idx, show in enumerate(shows):
-        if show['unix'] <= now < show_end(idx):
-            show = dict(show)
-            show['upcoming'] = False
-            show['status_label'] = 'NOW PLAYING'
-            show['color'] = COLOR_NOW
-            out['show'] = show
-            return out
-
-    # 3) Fall back to Indy's current flag
-    for show in shows:
-        if show['current']:
-            show = dict(show)
-            show['upcoming'] = False
-            show['status_label'] = 'NOW PLAYING'
-            show['color'] = COLOR_NOW
-            out['show'] = show
-            break
-
-    return out
-
-def update_thread():
-    my_serial = os.environ['SERIAL']
-    for sign in config.signs:
-        if sign['serial'] == my_serial:
-            break
-    else:
-        print >>sys.stderr, "couldn't find my sign"
-        return
-
-    should_blank = sign['blank']
-    device.turn_screen_on()
-
-    while 1:
-        indy_data = fetch_indy(sign['indy_id'])
-        if indy_data is None:
-            print >>sys.stderr, "No screen data"
-            time.sleep(60)
+    for show in screen.get('todaysShowings', []):
+        if hide_past and show.get('past'):
             continue
 
-        with open('indy.json', 'wb') as f:
-            json.dump(indy_data, f)
+        movie = show['movie']
+        name = movie['name']
+        if name not in movies:
+            badges = []
+            is_3d = False
+            for badge in (show.get('showingBadges') or []):
+                label = (badge.get('displayName') or badge.get('title') or '').strip()
+                if label:
+                    badges.append(label)
+                if badge_is_3d(badge):
+                    is_3d = True
 
-        for wait in xrange(12):
-            screen_data = parse_indy(indy_data)
-            with open('screen.json', 'wb') as f:
-                json.dump(screen_data, f)
+            movies[name] = {
+                'name': name,
+                'image': ''.join(ch for ch in name.lower() if ch.isalnum()),
+                'mpaa': (movie.get('rating') or '').strip(),
+                'threed': is_3d,
+                'badges': badges,
+                'shows': [],
+            }
 
-            if should_blank: 
-                if 'show' in screen_data:
-                    device.turn_screen_on()
-                else:
-                    device.turn_screen_off()
+        dt = datetime.datetime.strptime(show['time'], "%Y-%m-%dT%H:%M:%SZ")
+        dt = dt.replace(tzinfo=pytz.utc).astimezone(tz).replace(tzinfo=None)
+        parts = showtime_parts(dt)
+        parts['past'] = bool(show.get('past'))
+        parts['seats'] = 100
+        parts['sold'] = 0
+        movies[name]['shows'].append(parts)
 
-            time.sleep(10)
+    sorted_movies = sorted(movies.values(), key=lambda m: m['name'].lower())
+    for movie in sorted_movies:
+        movie['shows'].sort(key=lambda s: s['offset'])
 
-def test():
-    from pprint import pprint
-    with open('indy.json', 'rb') as f:
-        screen = json.load(f)
-        pprint(parse_indy(screen))
+    return {
+        'source': 'indy',
+        'screen': screen.get('name') or '',
+        'movies': sorted_movies,
+        'movies_per_page': int(cfg('movies_per_page', 4)),
+        'page_interval': max(1, int(cfg('page_interval', 5))),
+        'hide_poster': bool(cfg('hide_poster', True)),
+        'display_badges': bool(cfg('display_badges', True)),
+        'show_logo': bool(cfg('show_logo', False)),
+    }
 
-def main():
-    if 'TEST' in os.environ:
-        send_clock()
-        test()
+def write_showings(payload):
+    with open('showings.json', 'wb') as f:
+        f.write(json.dumps(payload, separators=(',', ':')))
+
+def indy_thread():
+    screen_id = cfg('indy_screen_id')
+    if not screen_id:
+        print >>sys.stderr, "indy_screen_id not configured; Indy sync disabled"
         return
 
-    while time.time() < 1000000:
-        print >>sys.stderr, "waiting for correct time"
-        time.sleep(1)
+    poll = max(30, int(cfg('indy_poll_interval', 120)))
+    print >>sys.stderr, "Indy sync enabled for screen %s" % screen_id
 
-    if 'SERIAL' in os.environ:
-        update = threading.Thread(target=update_thread)
-        update.daemon = True
-        update.start()
-    else:
-        print >>sys.stderr, "updating disabled"
+    while 1:
+        try:
+            screen = fetch_indy(screen_id)
+            write_showings(parse_indy_showings(screen))
+            NODE.send('/age/set:0')
+            NODE.send('/source/set:indy')
+        except Exception:
+            traceback.print_exc()
+        time.sleep(poll)
+
+def ftp_thread():
+    try:
+        for fname in ('BLOAD.txt',):
+            shutil.copyfile(os.path.join(os.environ['SCRATCH'], fname), fname)
+    except Exception:
+        traceback.print_exc()
+
+    authorizer = DummyAuthorizer()
+    if CONFIG['ftp_password']:
+        authorizer.add_user('bload', CONFIG['ftp_password'], homedir='.', perm='elrdw')
+
+    handler = MyHandler
+    handler.authorizer = authorizer
+    handler.banner = "BLOAD ftp server"
+    handler.abstracted_fs = RestrictedFS
+
+    channel = logging.StreamHandler()
+    logger = logging.getLogger('pyftpdlib')
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(channel)
+
+    server = FTPServer(('0.0.0.0', 2121), handler)
+    server.serve_forever()
+
+def main():
+    if cfg('indy_screen_id'):
+        indy = threading.Thread(target=indy_thread)
+        indy.daemon = True
+        indy.start()
+
+    if cfg('ftp_password'):
+        ftp = threading.Thread(target=ftp_thread)
+        ftp.daemon = True
+        ftp.start()
 
     while 1:
         send_clock()
         time.sleep(5)
 
 if __name__ == "__main__":
+    import sys
     main()

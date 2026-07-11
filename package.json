@@ -1,9 +1,14 @@
 {
-    "name": "Indy Single Screen Info",
-    "author": "Florian Wesch <fw@info-beamer.com>",
-    "desc": "Handles a single screen and shows information based on Indy API.",
-    "runtime": {
-        "antialias": true
+    "name": "BLOAD Indy Showings Display",
+    "author": "Florian Wesch <fw@dividuum.de>",
+    "desc": "Displays Indy showings in a BLOAD-style grid, with optional FTP BLOAD.txt fallback.",
+    "platforms": ["pi/v6", "pi/v7", "pi/v8"],
+    "offline": {
+        "support": "no",
+        "info": "Needs correct time"
     },
-    "platforms": ["pi/epoch-1", "pi/epoch-2"]
+    "nesting": {
+        "parents": ["top-level"],
+        "childs": []
+    }
 }
