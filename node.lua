@@ -534,6 +534,7 @@ local function show_bload()
                 if has_3d then
                     local icon_x = start_x + width + icon_gap
                     local icon_y = math.floor(show_y + (slot_h - icon_h) / 2)
+                    infofill:draw(icon_x - 1, icon_y - 1, icon_x + icon_w + 1, icon_y + icon_h + 1)
                     badge_3d:draw(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h)
                 end
 
