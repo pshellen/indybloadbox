@@ -67,14 +67,14 @@ local function compute_layout()
     -- Push the title, show start, and screen number closer to the
     -- bottom of the display. Because the poster height ends at the
     -- title position, this also gives the poster more vertical space.
-    local info_down = portrait and short * 0.280 or scale_y(28)
+    local info_down = portrait and short * 0.170 or scale_y(40)
 
     -- Rotated portrait signs clip the logical bottom edge on the physical display.
     local safe_inset = portrait and math.max(scale_y(100), HEIGHT * 0.10) or scale_y(32)
 
     -- Keep a small physical safety margin at the bottom.
     local normal_footer_y = HEIGHT - safe_inset - layout.footer_h
-    local lowest_footer_y = HEIGHT - scale_y(24) - layout.footer_h
+    local lowest_footer_y = HEIGHT - scale_y(8) - layout.footer_h
 
     layout.footer_y = math.min(
         normal_footer_y + info_down,
