@@ -36,7 +36,7 @@
                 [180, "180°"],
                 [270, "270°"]
             ],
-            "default": 0
+            "default": 90
         }, {
             "title": "Blank",
             "ui_width": 2,

@@ -108,7 +108,9 @@
     .poster-area {
       position: relative;
       margin: calc(56px * var(--sy, 1)) calc(4px * var(--sx, 1)) 0;
-      height: calc(700px * var(--sy, 1));
+      flex: 1 1 auto;
+      min-height: calc(320px * var(--sy, 1));
+      max-height: calc(72% - 120px * var(--sy, 1));
       flex-shrink: 0;
       display: flex;
       align-items: center;
@@ -238,7 +240,8 @@
 
     .bottom {
       margin-top: auto;
-      padding: 0 calc(40px * var(--sx, 1)) calc(12px * var(--sy, 1)) calc(8px * var(--sx, 1));
+      min-height: calc(var(--logical-short, 1080px) * 0.14);
+      padding: calc(8px * var(--sy, 1)) calc(40px * var(--sx, 1)) calc(12px * var(--sy, 1)) calc(8px * var(--sx, 1));
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -246,6 +249,7 @@
       font-weight: 700;
       text-transform: uppercase;
       gap: calc(var(--logical-short, 1080px) * 0.018);
+      flex-shrink: 0;
     }
 
     .bottom-left {
@@ -256,8 +260,9 @@
     }
 
     .corner-logo {
-      width: calc(var(--logical-short, 1080px) * 0.18);
-      height: calc(var(--logical-short, 1080px) * 0.18);
+      width: auto;
+      height: calc(var(--logical-short, 1080px) * 0.12);
+      max-width: 40%;
       object-fit: contain;
       flex-shrink: 0;
     }

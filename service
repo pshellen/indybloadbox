@@ -178,12 +178,19 @@ def parse_indy(screen):
 
     return out
 
+def resolve_sign(signs, serial):
+    for sign in signs:
+        if sign['serial'] == serial:
+            return sign
+    if len(signs) == 1:
+        print >>sys.stderr, "WARNING: device serial %s not in config; using the only configured sign" % serial
+        return signs[0]
+    return None
+
 def update_thread():
     my_serial = os.environ['SERIAL']
-    for sign in config.signs:
-        if sign['serial'] == my_serial:
-            break
-    else:
+    sign = resolve_sign(config.signs, my_serial)
+    if sign is None:
         print >>sys.stderr, "couldn't find my sign"
         return
 
