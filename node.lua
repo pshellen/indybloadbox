@@ -18,6 +18,7 @@ local bload_threshold = 3600
 local bload_fallback = resource.load_image "empty.png"
 local screen_idx, screen_cnt
 local logo
+local badge_3d = mipmapped_image("3D.png")
 
 local function mipmapped_image(filename)
     return resource.load_image(filename, true)
@@ -206,6 +207,7 @@ local bload = (function()
             seats = show.seats or 100,
             sold = show.sold or 0,
             past = show.past,
+            threed = show.threed,
         }
     end
 
@@ -500,13 +502,19 @@ local function show_bload()
                 fgfill:draw(show_x, show_y, show_x2, show_y2)
 
                 local showtime = show.showtime
+                local has_3d = show.threed
+                local icon_h = math.floor(slot_h * 0.42)
+                local icon_w = math.floor(icon_h * 920 / 716)
+                local icon_gap = has_3d and 4 or 0
+                local icon_reserve = has_3d and (icon_w + icon_gap) or 0
                 local slot_font = math.floor(math.min(
-                    slot_w / (#showtime.string * 0.62),
+                    (slot_w - icon_reserve) / (#showtime.string * 0.62),
                     slot_h * 0.62
                 ))
                 local width = res.font:width(showtime.string, slot_font)
                 local started = now > showtime.offset + 15 or show.past
-                local time_x = math.floor(show_x + (slot_w - width) / 2)
+                local total_w = width + icon_reserve
+                local start_x = math.floor(show_x + (slot_w - total_w) / 2)
                 local show_y_text = math.floor(show_y + (slot_h - slot_font) / 2 + slot_font * 0.05)
 
                 local color = {1,1,1,1}
@@ -521,11 +529,17 @@ local function show_bload()
                     color = {.5,.5,.5,1}
                 end
 
-                res.font:write(time_x, show_y_text, showtime.string, slot_font, unpack(color))
+                res.font:write(start_x, show_y_text, showtime.string, slot_font, unpack(color))
+
+                if has_3d then
+                    local icon_x = start_x + width + icon_gap
+                    local icon_y = math.floor(show_y + (slot_h - icon_h) / 2)
+                    badge_3d:draw(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h)
+                end
 
                 if started then
                     strike_through_color:use{color = color}
-                    strike_through:draw(time_x-10, show_y_text+slot_font/2-slot_font*0.05, time_x+width+10, show_y_text+slot_font/2-slot_font*0.05+2, 1)
+                    strike_through:draw(start_x-10, show_y_text+slot_font/2-slot_font*0.05, start_x+width+10, show_y_text+slot_font/2-slot_font*0.05+2, 1)
                     strike_through_color:deactivate()
                 end
             end

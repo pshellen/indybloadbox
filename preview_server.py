@@ -85,6 +85,9 @@ def parse_indy_showings(site, options):
         parts["past"] = bool(show.get("past"))
         parts["seats"] = 100
         parts["sold"] = 0
+        parts["threed"] = any(
+            badge_is_3d(badge) for badge in (show.get("showingBadges") or [])
+        )
         movies[name]["shows"].append(parts)
 
     sorted_movies = sorted(movies.values(), key=lambda m: m["name"].lower())

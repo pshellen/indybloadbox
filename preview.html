@@ -216,6 +216,14 @@
       transform: translateY(-50%);
     }
 
+    .time-3d {
+      height: 42%;
+      max-height: 0.9em;
+      width: auto;
+      flex-shrink: 0;
+      object-fit: contain;
+    }
+
     .note {
       max-width: 960px;
       font-size: 12px;
@@ -338,9 +346,10 @@
       return size;
     }
 
-    function timeFontSize(showW, showH, timeString) {
+    function timeFontSize(showW, showH, timeString, has3d) {
       const len = Math.max(4, (timeString || "12:00pm").length);
-      return Math.max(14, Math.floor(Math.min(showW / (len * 0.62), showH * 0.62)));
+      const iconReserve = has3d ? showH * 0.42 * (920 / 716) + 4 : 0;
+      return Math.max(14, Math.floor(Math.min((showW - iconReserve) / (len * 0.62), showH * 0.62)));
     }
 
     function renderCell(movie, cellW, cellH, cfg) {
@@ -373,7 +382,10 @@
         if (started) cls += " past";
         else if (show.seats === 0) cls += " soldout";
         else if (show.seats <= 20) cls += " warn";
-        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string)}px">${show.string}</div>`;
+        const threeD = show.threed
+          ? `<img class="time-3d" src="3D.png" alt="3D" />`
+          : "";
+        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, show.threed)}px"><span>${show.string}</span>${threeD}</div>`;
       }).join("");
 
       return `
