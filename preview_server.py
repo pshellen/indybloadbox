@@ -4,9 +4,11 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from urllib.parse import parse_qs, urlparse
+import argparse
 import datetime
 import json
 import os
+import sys
 
 try:
     import pytz
@@ -14,9 +16,13 @@ except ImportError:
     pytz = None
 
 PORT = 8765
+HOST = "0.0.0.0"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 GRAPHQL = "https://api-us.indy.systems/graphql"
-UA = "bload-preview/1.0"
+UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+)
 DEFAULT_TZ = "US/Eastern"
 
 
@@ -101,6 +107,10 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
 
+    def end_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        super().end_headers()
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path.startswith("/api/showings/"):
@@ -137,9 +147,13 @@ class Handler(SimpleHTTPRequestHandler):
             method="POST",
         )
         try:
-            with urlopen(req, timeout=10) as resp:
+            with urlopen(req, timeout=15) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
-            site = payload["data"]["site"]
+            if payload.get("errors"):
+                raise ValueError(payload["errors"][0].get("message", "GraphQL error"))
+            site = payload.get("data", {}).get("site")
+            if not site:
+                raise ValueError("Indy returned no site data for id %s" % site_id)
             data = parse_indy_showings(site, options)
             encoded = json.dumps(data).encode("utf-8")
             self.send_response(200)
@@ -147,7 +161,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(encoded)
-        except (URLError, HTTPError, KeyError, ValueError) as err:
+        except Exception as err:
+            print("[preview] showings error for site %s: %s" % (site_id, err), file=sys.stderr)
             payload = json.dumps({"error": {"message": str(err)}}).encode("utf-8")
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
@@ -159,7 +174,18 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="BLOAD Indy grid preview server")
+    parser.add_argument("--host", default=HOST, help="bind address (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=PORT, help="port (default: 8765)")
+    args = parser.parse_args()
+
     os.chdir(ROOT)
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print("Preview: http://127.0.0.1:%d/preview.html" % PORT)
-    server.serve_forever()
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print("Serving %s" % ROOT)
+    print("Preview: http://127.0.0.1:%d/preview.html" % args.port)
+    print("API:     http://127.0.0.1:%d/api/showings/338" % args.port)
+    print("Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped.")

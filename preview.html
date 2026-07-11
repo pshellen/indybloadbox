@@ -463,18 +463,34 @@
     }
 
     async function loadShowings() {
+      if (window.location.protocol === "file:") {
+        statusEl.className = "status error";
+        statusEl.textContent = "Open via the preview server, not as a file. Run: python3 preview_server.py then visit http://127.0.0.1:8765/preview.html";
+        return;
+      }
+
       const id = document.getElementById("siteId").value;
       statusEl.className = "status";
       statusEl.textContent = `Fetching site ${id}…`;
       try {
         const r = await fetch(`/api/showings/${id}?${queryParams()}`);
         const json = await r.json();
-        if (json.error) throw new Error(json.error.message || "API error");
+        if (!r.ok || json.error) {
+          throw new Error(json.error?.message || `Request failed (${r.status})`);
+        }
+        if (!json.movies?.length) {
+          throw new Error("No movies returned for this site ID");
+        }
         showings = json;
         render(showings);
       } catch (err) {
         statusEl.className = "status error";
-        statusEl.textContent = String(err.message || err);
+        const msg = String(err.message || err);
+        if (msg === "Failed to fetch") {
+          statusEl.textContent = "Cannot reach preview server. Run: python3 preview_server.py";
+        } else {
+          statusEl.textContent = msg;
+        }
       }
     }
 
