@@ -44,12 +44,12 @@ def localize(dt, tz_name):
     return dt.astimezone(pytz.timezone(tz_name)).replace(tzinfo=None)
 
 
-def parse_indy_showings(screen, options):
+def parse_indy_showings(site, options):
     tz_name = options.get("timezone", DEFAULT_TZ)
     hide_past = bool(options.get("hide_past", False))
     movies = {}
 
-    for show in screen.get("todaysShowings", []):
+    for show in site.get("todaysShowings", []):
         if hide_past and show.get("past"):
             continue
 
@@ -87,7 +87,7 @@ def parse_indy_showings(screen, options):
 
     return {
         "source": "indy",
-        "screen": screen.get("name") or "",
+        "site": site.get("name") or "",
         "movies": sorted_movies,
         "movies_per_page": int(options.get("movies_per_page", 4)),
         "page_interval": max(1, int(options.get("page_interval", 5))),
@@ -104,7 +104,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path.startswith("/api/showings/"):
-            screen_id = parsed.path.split("/api/showings/", 1)[1].split("/", 1)[0]
+            site_id = parsed.path.split("/api/showings/", 1)[1].split("/", 1)[0]
             qs = parse_qs(parsed.query)
             options = {
                 "timezone": qs.get("timezone", [DEFAULT_TZ])[0],
@@ -115,16 +115,16 @@ class Handler(SimpleHTTPRequestHandler):
                 "display_badges": qs.get("display_badges", ["1"])[0] in ("1", "true", "yes"),
                 "show_logo": qs.get("show_logo", ["0"])[0] in ("1", "true", "yes"),
             }
-            self.proxy_showings(screen_id, options)
+            self.proxy_showings(site_id, options)
             return
         return super().do_GET()
 
-    def proxy_showings(self, screen_id, options):
+    def proxy_showings(self, site_id, options):
         query = (
-            '{ screen(id: "%s") { name todaysShowings { time current past '
+            "{ site(id: %s) { name todaysShowings { time current past "
             "showingBadges { id title displayName } "
             "movie { name rating ratingReason posterImage } } } }"
-        ) % screen_id
+        ) % int(site_id)
         body = json.dumps({"query": query}).encode("utf-8")
         req = Request(
             GRAPHQL,
@@ -139,8 +139,8 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             with urlopen(req, timeout=10) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
-            screen = payload["data"]["screen"]
-            data = parse_indy_showings(screen, options)
+            site = payload["data"]["site"]
+            data = parse_indy_showings(site, options)
             encoded = json.dumps(data).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

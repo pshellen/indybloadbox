@@ -79,7 +79,7 @@ def send_clock():
     except:
         pass
 
-def fetch_indy(screen_id):
+def fetch_indy(site_id):
     r = requests.post(
         GRAPHQL,
         headers={
@@ -90,15 +90,15 @@ def fetch_indy(screen_id):
         timeout=10,
         data=json.dumps({
             'query': (
-                '{ screen(id: "%s") { name todaysShowings { time current past '
+                '{ site(id: %s) { name todaysShowings { time current past '
                 'showingBadges { id title displayName } '
                 'movie { name rating ratingReason posterImage } } } }'
-            ) % screen_id,
+            ) % int(site_id),
         }),
     )
     r.raise_for_status()
     payload = r.json()
-    return payload['data']['screen']
+    return payload['data']['site']
 
 def badge_is_3d(badge):
     title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
@@ -115,12 +115,12 @@ def showtime_parts(dt):
         'string': '%d:%02d%s' % (display_hour, minute, suffix),
     }
 
-def parse_indy_showings(screen):
+def parse_indy_showings(site):
     tz = pytz.timezone(CONFIG['timezone'])
     hide_past = cfg('hide_past', False)
     movies = {}
 
-    for show in screen.get('todaysShowings', []):
+    for show in site.get('todaysShowings', []):
         if hide_past and show.get('past'):
             continue
 
@@ -159,7 +159,7 @@ def parse_indy_showings(screen):
 
     return {
         'source': 'indy',
-        'screen': screen.get('name') or '',
+        'site': site.get('name') or '',
         'movies': sorted_movies,
         'movies_per_page': int(cfg('movies_per_page', 4)),
         'page_interval': max(1, int(cfg('page_interval', 5))),
@@ -172,19 +172,22 @@ def write_showings(payload):
     with open('showings.json', 'wb') as f:
         f.write(json.dumps(payload, separators=(',', ':')))
 
+def indy_site_id():
+    return cfg('indy_site_id') or cfg('indy_screen_id')
+
 def indy_thread():
-    screen_id = cfg('indy_screen_id')
-    if not screen_id:
-        print >>sys.stderr, "indy_screen_id not configured; Indy sync disabled"
+    site_id = indy_site_id()
+    if not site_id:
+        print >>sys.stderr, "indy_site_id not configured; Indy sync disabled"
         return
 
     poll = max(30, int(cfg('indy_poll_interval', 120)))
-    print >>sys.stderr, "Indy sync enabled for screen %s" % screen_id
+    print >>sys.stderr, "Indy sync enabled for site %s" % site_id
 
     while 1:
         try:
-            screen = fetch_indy(screen_id)
-            write_showings(parse_indy_showings(screen))
+            site = fetch_indy(site_id)
+            write_showings(parse_indy_showings(site))
             NODE.send('/age/set:0')
             NODE.send('/source/set:indy')
         except Exception:
@@ -216,7 +219,7 @@ def ftp_thread():
     server.serve_forever()
 
 def main():
-    if cfg('indy_screen_id'):
+    if indy_site_id():
         indy = threading.Thread(target=indy_thread)
         indy.daemon = True
         indy.start()

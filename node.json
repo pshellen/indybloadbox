@@ -8,11 +8,11 @@
         "title": "Indy showings list",
         "type": "section"
     }, {
-        "title": "Indy screen ID",
+        "title": "Indy site ID",
         "ui_width": 3,
-        "name": "indy_screen_id",
+        "name": "indy_site_id",
         "type": "integer",
-        "hint": "Matches signage-us.indy.systems/showings-list/ID (e.g. 338)",
+        "hint": "Site ID from signage-us.indy.systems/showings-list/ID (e.g. 338 for all showtimes)",
         "default": 338
     }, {
         "title": "Movies per page",
@@ -109,7 +109,7 @@
         "ui_type": "password",
         "name": "ftp_password",
         "type": "string",
-        "hint": "Leave empty to disable FTP; Indy is used when screen ID is set",
+        "hint": "Leave empty to disable FTP; Indy is used when site ID is set",
         "default": ""
     }, {
         "title": "Missing data fallback threshold",

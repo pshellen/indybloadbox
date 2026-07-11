@@ -221,8 +221,8 @@
   <h1>BLOAD Indy grid preview</h1>
 
   <div class="toolbar">
-    <label for="screenId">Screen ID</label>
-    <input id="screenId" type="number" value="338" min="1" />
+    <label for="siteId">Site ID</label>
+    <input id="siteId" type="number" value="338" min="1" />
     <label for="rotation">Rotation</label>
     <select id="rotation">
       <option value="0" selected>0°</option>
@@ -439,7 +439,7 @@
 
       const pageCount = Math.max(1, Math.ceil((data.movies?.length || 0) / (data.movies_per_page || 4)));
       statusEl.className = "status";
-      statusEl.textContent = `${data.screen || "Screen"} · ${data.movies.length} movie(s) · page ${Math.floor(Date.now() / ((data.page_interval || 5) * 1000)) % pageCount + 1}/${pageCount}`;
+      statusEl.textContent = `${data.site || "Site"} · ${data.movies.length} movie(s) · page ${Math.floor(Date.now() / ((data.page_interval || 5) * 1000)) % pageCount + 1}/${pageCount}`;
     }
 
     function queryParams() {
@@ -456,9 +456,9 @@
     }
 
     async function loadShowings() {
-      const id = document.getElementById("screenId").value;
+      const id = document.getElementById("siteId").value;
       statusEl.className = "status";
-      statusEl.textContent = `Fetching screen ${id}…`;
+      statusEl.textContent = `Fetching site ${id}…`;
       try {
         const r = await fetch(`/api/showings/${id}?${queryParams()}`);
         const json = await r.json();
