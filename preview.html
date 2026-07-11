@@ -216,21 +216,10 @@
       transform: translateY(-50%);
     }
 
-    .time-3d-wrap {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: #fff;
-      border-radius: 2px;
-      padding: 1px 3px;
-      height: 1.15em;
-      flex-shrink: 0;
-      line-height: 0;
-    }
-
     .time-3d {
-      height: 1em;
+      height: 1.15em;
       width: auto;
+      flex-shrink: 0;
       display: block;
       object-fit: contain;
     }
@@ -394,7 +383,7 @@
         else if (show.seats === 0) cls += " soldout";
         else if (show.seats <= 20) cls += " warn";
         const threeDIcon = show.threed
-          ? `<span class="time-3d-wrap"><img class="time-3d" src="3D.png" alt="3D" /></span>`
+          ? `<img class="time-3d" src="3D.png" alt="3D" />`
           : "";
         return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, show.threed)}px"><span>${show.string}</span>${threeDIcon}</div>`;
       }).join("");
