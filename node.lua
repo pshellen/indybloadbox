@@ -18,13 +18,16 @@ local bload_threshold = 3600
 local bload_fallback = resource.load_image "empty.png"
 local screen_idx, screen_cnt
 local logo
-local badge_3d = mipmapped_image("3D.png")
 
 local function mipmapped_image(filename)
     return resource.load_image(filename, true)
 end
 util.loaders.jpg = mipmapped_image
 util.loaders.png = mipmapped_image
+
+local badge_3d = mipmapped_image("3D.png")
+local badge_green = resource.create_colored_texture(0.02, 0.55, 0.18, 1)
+local badge_blue = resource.create_colored_texture(2/255, 122/255, 193/255, 1)
 
 local res = util.resource_loader({
     "font.ttf";
@@ -208,6 +211,8 @@ local bload = (function()
             sold = show.sold or 0,
             past = show.past,
             threed = show.threed,
+            sensory = show.sensory,
+            open_caption = show.open_caption,
         }
     end
 
@@ -502,20 +507,33 @@ local function show_bload()
                 fgfill:draw(show_x, show_y, show_x2, show_y2)
 
                 local showtime = show.showtime
-                local has_3d = show.threed
-                local icon_h = math.floor(slot_h * 0.42)
-                local icon_w = math.floor(icon_h * 920 / 716)
-                local icon_gap = has_3d and 4 or 0
-                local icon_reserve = has_3d and (icon_w + icon_gap) or 0
+                local gap = 4
+                local extra_reserve = 0
+                local tag_font = math.max(10, math.floor(slot_h * 0.24))
+
+                if cfg.display_badges then
+                    if show.threed then
+                        local icon_h = math.floor(slot_h * 0.42)
+                        extra_reserve = extra_reserve + math.floor(icon_h * 920 / 716) + gap
+                    end
+                    if show.sensory then
+                        extra_reserve = extra_reserve + res.font:width('SENS', tag_font) + 4 + gap
+                    end
+                    if show.open_caption then
+                        extra_reserve = extra_reserve + res.font:width('OC', tag_font) + 4 + gap
+                    end
+                end
+
                 local slot_font = math.floor(math.min(
-                    (slot_w - icon_reserve) / (#showtime.string * 0.62),
+                    (slot_w - extra_reserve) / (#showtime.string * 0.62),
                     slot_h * 0.62
                 ))
                 local width = res.font:width(showtime.string, slot_font)
                 local started = now > showtime.offset + 15 or show.past
-                local total_w = width + icon_reserve
+                local total_w = width + extra_reserve
                 local start_x = math.floor(show_x + (slot_w - total_w) / 2)
                 local show_y_text = math.floor(show_y + (slot_h - slot_font) / 2 + slot_font * 0.05)
+                local cursor_x = start_x + width + gap
 
                 local color = {1,1,1,1}
 
@@ -531,10 +549,31 @@ local function show_bload()
 
                 res.font:write(start_x, show_y_text, showtime.string, slot_font, unpack(color))
 
-                if has_3d then
-                    local icon_x = start_x + width + icon_gap
-                    local icon_y = math.floor(show_y + (slot_h - icon_h) / 2)
-                    badge_3d:draw(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h)
+                if cfg.display_badges then
+                    if show.threed then
+                        local icon_h = math.floor(slot_h * 0.42)
+                        local icon_w = math.floor(icon_h * 920 / 716)
+                        local icon_y = math.floor(show_y + (slot_h - icon_h) / 2)
+                        badge_3d:draw(cursor_x, icon_y, cursor_x + icon_w, icon_y + icon_h)
+                        cursor_x = cursor_x + icon_w + gap
+                    end
+
+                    local function draw_tag(text, fill)
+                        local tw = res.font:width(text, tag_font)
+                        local tag_w = tw + 4
+                        local tag_h = tag_font + 4
+                        local tag_y = math.floor(show_y + (slot_h - tag_h) / 2)
+                        fill:draw(cursor_x, tag_y, cursor_x + tag_w, tag_y + tag_h)
+                        res.font:write(cursor_x + 2, tag_y + 2, text, tag_font, 1, 1, 1, 1)
+                        cursor_x = cursor_x + tag_w + gap
+                    end
+
+                    if show.sensory then
+                        draw_tag('SENS', badge_green)
+                    end
+                    if show.open_caption then
+                        draw_tag('OC', badge_blue)
+                    end
                 end
 
                 if started then

@@ -224,6 +224,20 @@
       object-fit: contain;
     }
 
+    .time-tag {
+      font-size: 0.42em;
+      font-weight: 700;
+      line-height: 1;
+      padding: 0.18em 0.34em;
+      border-radius: 2px;
+      color: #fff;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    .time-tag.sensory { background: #0a8c2e; }
+    .time-tag.caption { background: #027ac1; }
+
     .note {
       max-width: 960px;
       font-size: 12px;
@@ -346,10 +360,28 @@
       return size;
     }
 
-    function timeFontSize(showW, showH, timeString, has3d) {
+    function showtimeReserve(show, cfg, showH) {
+      if (!cfg.display_badges) return 0;
+      let reserve = 0;
+      const gap = 4;
+      if (show.threed) reserve += showH * 0.42 * (920 / 716) + gap;
+      if (show.sensory) reserve += showH * 0.32 + gap;
+      if (show.open_caption) reserve += showH * 0.28 + gap;
+      return reserve;
+    }
+
+    function showtimeExtras(show, cfg) {
+      if (!cfg.display_badges) return "";
+      let html = "";
+      if (show.threed) html += `<img class="time-3d" src="3D.png" alt="3D" />`;
+      if (show.sensory) html += `<span class="time-tag sensory">SENS</span>`;
+      if (show.open_caption) html += `<span class="time-tag caption">OC</span>`;
+      return html;
+    }
+
+    function timeFontSize(showW, showH, timeString, reserve) {
       const len = Math.max(4, (timeString || "12:00pm").length);
-      const iconReserve = has3d ? showH * 0.42 * (920 / 716) + 4 : 0;
-      return Math.max(14, Math.floor(Math.min((showW - iconReserve) / (len * 0.62), showH * 0.62)));
+      return Math.max(14, Math.floor(Math.min((showW - reserve) / (len * 0.62), showH * 0.62)));
     }
 
     function renderCell(movie, cellW, cellH, cfg) {
@@ -382,10 +414,9 @@
         if (started) cls += " past";
         else if (show.seats === 0) cls += " soldout";
         else if (show.seats <= 20) cls += " warn";
-        const threeDIcon = show.threed
-          ? `<img class="time-3d" src="3D.png" alt="3D" />`
-          : "";
-        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, show.threed)}px"><span>${show.string}</span>${threeDIcon}</div>`;
+        const reserve = showtimeReserve(show, cfg, showH);
+        const extras = showtimeExtras(show, cfg);
+        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, reserve)}px"><span>${show.string}</span>${extras}</div>`;
       }).join("");
 
       return `

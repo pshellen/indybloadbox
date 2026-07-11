@@ -104,6 +104,25 @@ def badge_is_3d(badge):
     title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
     return title == '3d' or title.startswith('3d ') or ' 3d' in title
 
+def badge_is_sensory(badge):
+    title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
+    return 'sensory' in title
+
+def badge_is_open_caption(badge):
+    title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
+    return (
+        'open caption' in title
+        or title in ('oc', 'open captions', 'open captioning', 'open captioned')
+    )
+
+def show_badge_flags(badges):
+    badges = badges or []
+    return {
+        'threed': any(badge_is_3d(badge) for badge in badges),
+        'sensory': any(badge_is_sensory(badge) for badge in badges),
+        'open_caption': any(badge_is_open_caption(badge) for badge in badges),
+    }
+
 def showtime_parts(dt):
     hour, minute = dt.hour, dt.minute
     suffix = 'am' if hour < 12 else 'pm'
@@ -151,9 +170,7 @@ def parse_indy_showings(site):
         parts['past'] = bool(show.get('past'))
         parts['seats'] = 100
         parts['sold'] = 0
-        parts['threed'] = any(
-            badge_is_3d(badge) for badge in (show.get('showingBadges') or [])
-        )
+        parts.update(show_badge_flags(show.get('showingBadges')))
         movies[name]['shows'].append(parts)
 
     sorted_movies = sorted(movies.values(), key=lambda m: m['name'].lower())
