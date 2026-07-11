@@ -197,23 +197,26 @@ local bload = (function()
     end
 
     local function normalize_show(show)
+        local normalized
         if show.showtime then
-            return show
+            normalized = show
+        else
+            normalized = {
+                showtime = {
+                    hour = show.hour,
+                    minute = show.minute,
+                    offset = show.offset,
+                    string = show.string,
+                },
+                seats = show.seats or 100,
+                sold = show.sold or 0,
+                past = show.past,
+            }
         end
-        return {
-            showtime = {
-                hour = show.hour,
-                minute = show.minute,
-                offset = show.offset,
-                string = show.string,
-            },
-            seats = show.seats or 100,
-            sold = show.sold or 0,
-            past = show.past,
-            threed = show.threed,
-            sensory = show.sensory,
-            open_caption = show.open_caption,
-        }
+        if show.threed ~= nil then normalized.threed = show.threed end
+        if show.sensory ~= nil then normalized.sensory = show.sensory end
+        if show.open_caption ~= nil then normalized.open_caption = show.open_caption end
+        return normalized
     end
 
     local function set_indy_showings(data)
@@ -502,17 +505,17 @@ local function show_bload()
                 local showtime = show.showtime
                 local gap = 4
                 local extra_reserve = 0
-                local tag_font = math.max(10, math.floor(slot_h * 0.24))
+                local tag_font = math.max(12, math.floor(slot_h * 0.30))
 
                 if cfg.display_badges then
-                    if show.threed then
+                    if show.threed == true then
                         local icon_h = math.floor(slot_h * 0.42)
                         extra_reserve = extra_reserve + math.floor(icon_h * 920 / 716) + gap
                     end
-                    if show.sensory then
+                    if show.sensory == true then
                         extra_reserve = extra_reserve + res.font:width('SENS', tag_font) + 4 + gap
                     end
-                    if show.open_caption then
+                    if show.open_caption == true then
                         extra_reserve = extra_reserve + res.font:width('OC', tag_font) + 4 + gap
                     end
                 end
@@ -543,7 +546,7 @@ local function show_bload()
                 res.font:write(start_x, show_y_text, showtime.string, slot_font, unpack(color))
 
                 if cfg.display_badges then
-                    if show.threed then
+                    if show.threed == true then
                         local icon_h = math.floor(slot_h * 0.42)
                         local icon_w = math.floor(icon_h * 920 / 716)
                         local icon_y = math.floor(show_y + (slot_h - icon_h) / 2)
@@ -561,10 +564,10 @@ local function show_bload()
                         cursor_x = cursor_x + tag_w + gap
                     end
 
-                    if show.sensory then
+                    if show.sensory == true then
                         draw_tag('SENS', badge_green)
                     end
-                    if show.open_caption then
+                    if show.open_caption == true then
                         draw_tag('OC', badge_blue)
                     end
                 end

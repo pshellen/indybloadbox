@@ -211,15 +211,15 @@
       flex-wrap: nowrap;
     }
 
-    .time.past { color: var(--text-past); }
-    .time.warn { color: var(--text-warn); }
-    .time.soldout { color: var(--text-soldout); }
+    .time.past .time-label {
+      position: relative;
+    }
 
-    .time.past::after {
+    .time.past .time-label::after {
       content: "";
       position: absolute;
-      left: 8%;
-      right: 8%;
+      left: 0;
+      right: 0;
       top: 50%;
       height: 2px;
       background: currentColor;
@@ -227,7 +227,6 @@
     }
 
     .time-3d {
-      height: 1.15em;
       width: auto;
       flex-shrink: 0;
       display: block;
@@ -235,10 +234,9 @@
     }
 
     .time-tag {
-      font-size: 0.42em;
       font-weight: 700;
       line-height: 1;
-      padding: 0.18em 0.34em;
+      padding: 0.2em 0.4em;
       border-radius: 2px;
       color: #fff;
       flex-shrink: 0;
@@ -247,6 +245,10 @@
 
     .time-tag.sensory { background: #0a8c2e; }
     .time-tag.caption { background: #027ac1; }
+
+    .time.past { color: var(--text-past); }
+    .time.warn { color: var(--text-warn); }
+    .time.soldout { color: var(--text-soldout); }
 
     .note {
       max-width: 960px;
@@ -370,22 +372,36 @@
       return size;
     }
 
+    function badgesEnabled() {
+      return document.getElementById("displayBadges").checked;
+    }
+
     function showtimeReserve(show, cfg, showH) {
       if (!cfg.display_badges) return 0;
       let reserve = 0;
       const gap = 4;
-      if (show.threed) reserve += showH * 0.42 * (920 / 716) + gap;
-      if (show.sensory) reserve += showH * 0.32 + gap;
-      if (show.open_caption) reserve += showH * 0.28 + gap;
+      const tagSize = Math.max(12, Math.floor(showH * 0.28));
+      const iconH = Math.max(16, Math.floor(showH * 0.38));
+      if (show.threed) reserve += iconH * (920 / 716) + gap;
+      if (show.sensory) reserve += tagSize * 3.2 + gap;
+      if (show.open_caption) reserve += tagSize * 1.8 + gap;
       return reserve;
     }
 
-    function showtimeExtras(show, cfg) {
+    function showtimeExtras(show, cfg, showH) {
       if (!cfg.display_badges) return "";
+      const tagSize = Math.max(12, Math.floor(showH * 0.28));
+      const iconH = Math.max(16, Math.floor(showH * 0.38));
       let html = "";
-      if (show.threed) html += `<img class="time-3d" src="3D.png" alt="3D" />`;
-      if (show.sensory) html += `<span class="time-tag sensory">SENS</span>`;
-      if (show.open_caption) html += `<span class="time-tag caption">OC</span>`;
+      if (show.threed) {
+        html += `<img class="time-3d" src="3D.png" alt="3D" style="height:${iconH}px" />`;
+      }
+      if (show.sensory) {
+        html += `<span class="time-tag sensory" style="font-size:${tagSize}px">SENS</span>`;
+      }
+      if (show.open_caption) {
+        html += `<span class="time-tag caption" style="font-size:${tagSize}px">OC</span>`;
+      }
       return html;
     }
 
@@ -396,7 +412,8 @@
 
     function renderCell(movie, cellW, cellH, cfg) {
       const split = Math.min(cellH - 150, cellH / 1.5);
-      const infoH = cfg.display_badges && movie.badges?.length ? 72 : 50;
+      const cellCfg = { ...cfg, display_badges: badgesEnabled() };
+      const infoH = cellCfg.display_badges && movie.badges?.length ? 72 : 50;
       const [timeCols, timeRows] = timeGrid(movie.shows.length);
       const showW = cellW / timeCols;
       const showH = (cellH - split - infoH) / timeRows;
@@ -410,7 +427,7 @@
         posterHtml = `<div class="title-fallback" style="font-size:${titleSize}px">${movie.name}</div>`;
       }
 
-      const badgeHtml = cfg.display_badges && movie.badges?.length
+      const badgeHtml = cellCfg.display_badges && movie.badges?.length
         ? `<div class="badge-row">${movie.badges.join("  ")}</div>`
         : "";
 
@@ -420,9 +437,9 @@
         if (started) cls += " past";
         else if (show.seats === 0) cls += " soldout";
         else if (show.seats <= 20) cls += " warn";
-        const reserve = showtimeReserve(show, cfg, showH);
-        const extras = showtimeExtras(show, cfg);
-        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, reserve)}px"><div class="time-contents"><span>${show.string}</span>${extras}</div></div>`;
+        const reserve = showtimeReserve(show, cellCfg, showH);
+        const extras = showtimeExtras(show, cellCfg, showH);
+        return `<div class="${cls}" style="font-size:${timeFontSize(showW, showH, show.string, reserve)}px"><div class="time-contents"><span class="time-label">${show.string}</span>${extras}</div></div>`;
       }).join("");
 
       return `
