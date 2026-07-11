@@ -99,6 +99,7 @@
       display: flex;
       flex-direction: column;
       color: var(--text);
+      overflow: hidden;
     }
 
     .logo-row {
@@ -248,17 +249,20 @@
     }
 
     .bottom {
-      margin-top: calc(12px * var(--sy, 1));
-      min-height: calc(var(--logical-short, 1080px) * 0.11);
-      padding: calc(8px * var(--sy, 1)) calc(40px * var(--sx, 1)) calc(12px * var(--sy, 1)) calc(8px * var(--sx, 1));
+      position: absolute;
+      left: calc(8px * var(--sx, 1));
+      right: calc(40px * var(--sx, 1));
+      bottom: calc(8px * var(--sy, 1));
+      min-height: calc(var(--logical-short, 1080px) * 0.12);
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-end;
       font-size: calc(var(--logical-short, 1080px) * 0.048);
       font-weight: 700;
       text-transform: uppercase;
       gap: calc(var(--logical-short, 1080px) * 0.018);
       flex-shrink: 0;
+      pointer-events: none;
     }
 
     .bottom-left {

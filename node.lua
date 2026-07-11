@@ -44,9 +44,9 @@ end
 local function compute_layout()
     local short = math.min(WIDTH, HEIGHT)
     layout.bottom_pad = scale_y(8)
+    layout.logo_pad = scale_x(8)
     layout.bottom_size = short * 0.048
-    layout.footer_h = math.max(short * 0.11, layout.bottom_size * 2.8)
-    layout.corner_size = layout.footer_h - layout.bottom_pad * 2
+    layout.corner_size = short * 0.12
 
     if portrait then
         layout.title_size = short * 0.08
@@ -59,12 +59,13 @@ local function compute_layout()
     layout.badge_w = scale_x(572)
 
     local info_gap = scale_y(12)
-    -- Rotated portrait signs clip the logical bottom edge on the physical display.
-    local safe_inset = portrait and math.max(scale_y(100), HEIGHT * 0.10) or scale_y(32)
+    -- Keep text out of the bottom-left logo corner.
+    layout.logo_y2 = HEIGHT - layout.bottom_pad
+    layout.logo_y1 = layout.logo_y2 - layout.corner_size
+    layout.logo_x1 = layout.logo_pad
+    layout.bottom_y = layout.logo_y1 + (layout.corner_size - layout.bottom_size) / 2
 
-    layout.footer_y = HEIGHT - safe_inset - layout.footer_h
-    layout.bottom_y = layout.footer_y + (layout.footer_h - layout.bottom_size) / 2
-    layout.screen_y = layout.footer_y - info_gap - layout.bottom_size
+    layout.screen_y = layout.logo_y1 - info_gap - layout.bottom_size
     layout.showtime_y = layout.screen_y - info_gap - layout.bottom_size
     layout.movie_y = layout.showtime_y - info_gap - layout.title_size
 
@@ -167,32 +168,32 @@ local function draw_show_info()
     draw_bottom_bar(screen.show)
 end
 
+local function draw_corner_logo()
+    local logo = main_logo or corner_logo
+    if not logo then
+        return
+    end
+
+    local size = layout.corner_size
+    local lx1 = layout.logo_x1
+    local ly1 = layout.logo_y1
+    local lw, lh = logo:size()
+    local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
+    logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
+end
+
 local function draw_bottom_bar(show)
     if not show then
         return
     end
 
+    draw_corner_logo()
+
     local show_time = (show.start or ""):upper()
-    local pad = layout.bottom_pad
-    local size = layout.corner_size
-    local ly1 = layout.footer_y + pad
-    local ly2 = ly1 + size
-    local text_y = layout.bottom_y
-
-    if main_logo then
-        local lw, lh = main_logo:size()
-        local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        main_logo:draw(scale_x(8) + ix1, ly1 + iy1, scale_x(8) + ix2, ly1 + iy2)
-    elseif corner_logo then
-        local lw, lh = corner_logo:size()
-        local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        corner_logo:draw(scale_x(8) + ix1, ly1 + iy1, scale_x(8) + ix2, ly1 + iy2)
-    end
-
     if show_time ~= "" and not portrait then
         local time_label = "Show Start: " .. show_time
         local time_w = font:width(time_label, layout.bottom_size)
-        font:write(WIDTH - time_w - scale_x(40), text_y, time_label, layout.bottom_size, 1, 1, 1, 1)
+        font:write(WIDTH - time_w - scale_x(40), layout.bottom_y, time_label, layout.bottom_size, 1, 1, 1, 1)
     end
 end
 
@@ -495,7 +496,7 @@ function node.render()
         font:write(x, y, "Serial: " .. my_serial, 12, 1,1,1,1); y=y+12
         font:write(x, y, ("Time: %s"):format(local_time), 12, 1,1,1,1); y=y+12
         font:write(x, y, ("Canvas: %dx%d rot %d"):format(WIDTH, HEIGHT, rotation), 12, 1,1,1,1); y=y+12
-        font:write(x, y, ("Footer: y=%d h=%d"):format(layout.footer_y or -1, layout.footer_h or -1), 12, 1,1,1,1); y=y+12
+        font:write(x, y, ("Logo: %d,%d"):format(layout.logo_x1 or -1, layout.logo_y1 or -1), 12, 1,1,1,1); y=y+12
         font:write(x, y, ("Showtime y=%d"):format(layout.showtime_y or -1), 12, 1,1,1,1); y=y+12
         if screen.show then
             font:write(x, y, "Show: "..screen.show.name, 12, 1,1,1,1); y=y+12
