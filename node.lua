@@ -114,7 +114,13 @@ local function draw_badge(text, upcoming)
     local fill = upcoming and badge_green or badge_blue
 
     fill:draw(x1, y1, x1 + box_w, y1 + box_h)
-    font:write(x1 + (box_w - text_w) / 2, y1 + pad_y, text, size, 1, 1, 1, 1)
+    font:write(
+        x1 + (box_w - text_w) / 2,
+        y1 + (box_h - size) / 2,
+        text,
+        size,
+        1, 1, 1, 1
+    )
 end
 
 local function draw_title_row(show)
