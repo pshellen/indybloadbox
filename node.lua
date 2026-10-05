@@ -68,6 +68,7 @@ local function compute_layout()
         layout.screen_y = HEIGHT * 0.03
         layout.title_size = short * 0.08
         layout.showtime_size = short * 0.048
+        layout.show_screen_name = false
     else
         -- Horizontal screens use the width: poster on the left, branding and
         -- show information in a dedicated panel on the right.
@@ -75,18 +76,21 @@ local function compute_layout()
         layout.poster_x2 = WIDTH * 0.63
         layout.poster_y = HEIGHT * 0.025
         layout.poster_y2 = HEIGHT * 0.95
-        layout.info_center_x = WIDTH * 0.815
+        layout.info_center_x = WIDTH * 0.68
         layout.badge_center_x = WIDTH * 0.19
-        layout.info_w = WIDTH * 0.34
-        layout.logo_y = HEIGHT * 0.06
-        layout.logo_h = HEIGHT * 0.19
-        layout.logo_w = WIDTH * 0.30
+        layout.info_w = WIDTH * 0.56
+        layout.logo_y = HEIGHT * 0.09
+        layout.logo_h = HEIGHT * 0.22
+        layout.logo_w = WIDTH * 0.42
         layout.badge_y = HEIGHT * 0.925
         layout.badge_h = HEIGHT * 0.05
-        layout.movie_y = HEIGHT * 0.42
-        layout.screen_y = HEIGHT * 0.66
-        layout.title_size = scale_s(76)
-        layout.showtime_size = short * 0.065
+        layout.movie_y = HEIGHT * 0.41
+        layout.screen_y = HEIGHT * 0.61
+        layout.screen_name_y = HEIGHT * 0.76
+        layout.title_size = scale_s(88)
+        layout.showtime_size = short * 0.075
+        layout.screen_name_size = short * 0.06
+        layout.show_screen_name = true
     end
     layout.poster_h = layout.poster_y2 - layout.poster_y
     layout.bottom_size = short * 0.048
@@ -193,6 +197,15 @@ local function draw_show_info()
     draw_title_row(screen.show)
     local show_time = "SHOW TIME: " .. ((screen.show.start or ""):upper())
     draw_centered_text(show_time, layout.screen_y, layout.showtime_size, layout.info_w, layout.info_center_x)
+    if layout.show_screen_name then
+        draw_centered_text(
+            (screen.name or ""):upper(),
+            layout.screen_name_y,
+            layout.screen_name_size,
+            layout.info_w,
+            layout.info_center_x
+        )
+    end
 end
 
 util.file_watch("border.glsl", function(raw)
