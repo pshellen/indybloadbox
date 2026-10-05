@@ -52,6 +52,7 @@ local function compute_layout()
         layout.poster_x1 = layout.poster_pad
         layout.poster_x2 = WIDTH - layout.poster_pad
         layout.info_center_x = WIDTH / 2
+        layout.badge_center_x = layout.info_center_x
         layout.info_w = WIDTH - scale_x(40)
         -- A 270-degree screen transform reverses logical Y across the
         -- physical display. These values intentionally run bottom-to-top so
@@ -66,23 +67,26 @@ local function compute_layout()
         layout.movie_y = HEIGHT * 0.075
         layout.screen_y = HEIGHT * 0.03
         layout.title_size = short * 0.08
+        layout.showtime_size = short * 0.048
     else
         -- Horizontal screens use the width: poster on the left, branding and
         -- show information in a dedicated panel on the right.
-        layout.poster_x1 = WIDTH * 0.04
-        layout.poster_x2 = WIDTH * 0.55
-        layout.poster_y = HEIGHT * 0.08
-        layout.poster_y2 = HEIGHT * 0.92
-        layout.info_center_x = WIDTH * 0.76
-        layout.info_w = WIDTH * 0.40
-        layout.logo_y = HEIGHT * 0.05
-        layout.logo_h = HEIGHT * 0.16
-        layout.logo_w = WIDTH * 0.34
-        layout.badge_y = HEIGHT * 0.28
+        layout.poster_x1 = WIDTH * 0.015
+        layout.poster_x2 = WIDTH * 0.63
+        layout.poster_y = HEIGHT * 0.025
+        layout.poster_y2 = HEIGHT * 0.95
+        layout.info_center_x = WIDTH * 0.815
+        layout.badge_center_x = WIDTH * 0.19
+        layout.info_w = WIDTH * 0.34
+        layout.logo_y = HEIGHT * 0.06
+        layout.logo_h = HEIGHT * 0.19
+        layout.logo_w = WIDTH * 0.30
+        layout.badge_y = HEIGHT * 0.925
         layout.badge_h = HEIGHT * 0.05
-        layout.movie_y = HEIGHT * 0.50
-        layout.screen_y = HEIGHT * 0.68
-        layout.title_size = scale_s(64)
+        layout.movie_y = HEIGHT * 0.42
+        layout.screen_y = HEIGHT * 0.66
+        layout.title_size = scale_s(76)
+        layout.showtime_size = short * 0.065
     end
     layout.poster_h = layout.poster_y2 - layout.poster_y
     layout.bottom_size = short * 0.048
@@ -118,7 +122,7 @@ local function draw_badge(text, upcoming)
     local pad_y = scale_y(5)
     local box_w = math.min(layout.badge_w, text_w + pad_x * 2)
     local box_h = math.max(layout.badge_h, size + pad_y * 2)
-    local x1 = layout.info_center_x - box_w / 2
+    local x1 = layout.badge_center_x - box_w / 2
     local y1 = layout.badge_y
     local fill = upcoming and badge_green or badge_blue
 
@@ -188,7 +192,7 @@ local function draw_show_info()
     draw_badge(screen.show.status_label, screen.show.upcoming)
     draw_title_row(screen.show)
     local show_time = "SHOW TIME: " .. ((screen.show.start or ""):upper())
-    draw_centered_text(show_time, layout.screen_y, layout.bottom_size, layout.info_w, layout.info_center_x)
+    draw_centered_text(show_time, layout.screen_y, layout.showtime_size, layout.info_w, layout.info_center_x)
 end
 
 util.file_watch("border.glsl", function(raw)
@@ -272,6 +276,13 @@ local function fitted_poster_rect(media_w, media_h)
     local area_w = layout.poster_x2 - layout.poster_x1
     local area_h = layout.poster_y2 - layout.poster_y
     local ix1, iy1, ix2, iy2 = util.scale_into(area_w, area_h, media_w, media_h)
+    -- Portrait posters on a horizontal screen should hug the left padding
+    -- instead of floating in the center of an oversized poster region.
+    if not portrait then
+        local fitted_w = ix2 - ix1
+        ix1 = 0
+        ix2 = fitted_w
+    end
     return area_x1 + ix1, area_y1 + iy1, area_x1 + ix2, area_y1 + iy2
 end
 
