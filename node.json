@@ -27,7 +27,7 @@
         }, {
             "title": "Rotation",
             "ui_width": 2,
-            "hint": "Portrait-mounted signs need 90° or 270° so the layout stacks vertically",
+            "hint": "Screen rotates clock-wise",
             "name": "rotation",
             "type": "select",
             "options": [
@@ -56,19 +56,12 @@
         "title": "Player settings",
         "type": "section"
     }, {
-        "title": "Corner Logo",
+        "title": "Logo",
         "ui_width": 3,
         "name": "corner_logo",
         "type": "resource",
         "valid": ["image"],
-        "hint": "Best use transparent 55x55 PNG image",
-        "default": "logo.png"
-    }, {
-        "title": "Logo",
-        "ui_width": 3,
-        "name": "main_logo",
-        "type": "resource",
-        "valid": ["image"],
-        "default": "flagship.png"
+        "hint": "Logo used for all on-screen branding, including the no-show fallback. Best use a transparent PNG image.",
+        "default": "box.png"
     }]
 }
