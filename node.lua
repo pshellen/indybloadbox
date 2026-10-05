@@ -278,6 +278,7 @@ local function get_assets()
     return {{
         media = {
             asset_name = screen.show.poster_file,
+            fallback_asset_name = screen.show.fallback_poster_file,
             type = screen.show.media_type or "image",
         },
         duration = 86400
@@ -382,31 +383,58 @@ local function Image(asset_name, duration)
     }
 end
 
-local function Video(asset_name)
+local function Video(asset_name, duration, fallback_asset_name)
     print("started new video " .. asset_name)
     local file = resource.open_file(asset_name)
+    local fallback_obj
+    if fallback_asset_name and fallback_asset_name ~= "" then
+        fallback_obj = resource.load_image(fallback_asset_name)
+    end
     local obj
+    local video_failed = false
 
     local function start()
     end
     local function draw()
         black:draw(0, 0, WIDTH, HEIGHT)
 
-        if not obj then
-            obj = resource.load_video{
-                file = file;
-                raw = true;
-            }
+        if fallback_obj then
+            local fw, fh = fallback_obj:size()
+            draw_hugged_poster(fw, fh, function(x1, y1, x2, y2)
+                fallback_obj:draw(x1, y1, x2, y2)
+            end)
         end
 
-        local state, vw, vh = obj:state()
-        if state == "finished" then
-            obj:dispose()
-            obj = nil
-        elseif state == "loaded" then
-            draw_hugged_poster(vw, vh, function(x1, y1, x2, y2)
-                obj:place(x1, y1, x2, y2)
+        if not obj and not video_failed then
+            local ok, loaded = pcall(resource.load_video, {
+                file = file;
+                raw = true;
+            })
+            if ok then
+                obj = loaded
+            else
+                print("video load failed: " .. tostring(loaded))
+                video_failed = true
+            end
+        end
+
+        if obj then
+            local ok, state, vw, vh = pcall(function()
+                return obj:state()
             end)
+            if not ok then
+                print("video decode failed: " .. tostring(state))
+                obj:dispose()
+                obj = nil
+                video_failed = true
+            elseif state == "finished" then
+                obj:dispose()
+                obj = nil
+            elseif state == "loaded" then
+                draw_hugged_poster(vw, vh, function(x1, y1, x2, y2)
+                    obj:place(x1, y1, x2, y2)
+                end)
+            end
         end
 
         if screen.show then
@@ -419,6 +447,9 @@ local function Video(asset_name)
     local function unload()
         if obj then
             obj:dispose()
+        end
+        if fallback_obj then
+            fallback_obj:dispose()
         end
     end
     return {
@@ -467,7 +498,11 @@ local function Player()
                 image = Image;
                 video = Video;
                 fallback = Fallback;
-            })[asset.media.type](asset.media.asset_name, asset.duration)
+            })[asset.media.type](
+                asset.media.asset_name,
+                asset.duration,
+                asset.media.fallback_asset_name
+            )
         end
 
         local ended = current.draw()

@@ -1,5 +1,5 @@
 #!/usr/bin/python2.7
-import sys, pytz, time, threading, os, traceback, requests, json, calendar, tempfile
+import sys, pytz, time, threading, os, traceback, requests, json, calendar, tempfile, hashlib
 from itertools import tee, islice, chain
 from datetime import datetime
 from hosted import config, node, device
@@ -60,6 +60,29 @@ def fetch_into(src, dst):
         time.sleep(30) # enforce minimum error delay
         return None
 
+def cache_name(prefix, source, extension):
+    value = source.encode('utf-8') if isinstance(source, unicode) else source
+    return '%s-%s.%s' % (prefix, hashlib.sha1(value).hexdigest(), extension)
+
+def is_h264_mp4(path):
+    """Only send MP4/H.264 assets to the Pi hardware video decoder."""
+    try:
+        found_ftyp = False
+        found_avc = False
+        with open(path, 'rb') as media:
+            while True:
+                chunk = media.read(65536)
+                if not chunk:
+                    break
+                found_ftyp = found_ftyp or b'ftyp' in chunk
+                found_avc = found_avc or b'avc1' in chunk or b'avc3' in chunk
+                if found_ftyp and found_avc:
+                    return True
+        return False
+    except Exception:
+        traceback.print_exc()
+        return False
+
 def fetch_indy(screen_id):
     try:
         r = requests.post(
@@ -89,22 +112,30 @@ def parse_indy(screen):
             start, unix = localize(datetime.strptime(show['time'], "%Y-%m-%dT%H:%M:%SZ"))
             poster = show['movie']['posterImage']
             animated = show['movie'].get('animatedPosterVideo')
-            poster_file = ""
+            still_file = ""
+            motion_file = ""
             media_type = "image"
 
-            if animated:
-                poster_file = fetch_into(
-                    src = '%s/%s?auto=format,compress' % (IMGIX_BASE, animated),
-                    dst = 'motion-%s.mp4' % animated,
-                )
-                if poster_file:
-                    media_type = "video"
-
-            if not poster_file and poster:
-                poster_file = fetch_into(
+            # Always keep a still image available. It is displayed while a
+            # motion poster loads and whenever the Pi cannot decode the video.
+            if poster:
+                still_file = fetch_into(
                     src = '%s/%s?fit=crop&w=1000&h=1500&fm=jpeg&auto=format,compress&cs=origin' % (IMGIX_BASE, poster),
-                    dst = 'poster-%s.jpg' % poster,
-                )
+                    dst = cache_name('poster', poster, 'jpg'),
+                ) or ""
+
+            if animated:
+                motion_file = fetch_into(
+                    src = '%s/%s?auto=format,compress' % (IMGIX_BASE, animated),
+                    dst = cache_name('motion', animated, 'mp4'),
+                ) or ""
+                if motion_file and is_h264_mp4(motion_file):
+                    media_type = "video"
+                elif motion_file:
+                    print >>sys.stderr, "motion poster is not H.264 MP4; using still poster"
+                    motion_file = ""
+
+            poster_file = motion_file or still_file
 
             status = show['movie'].get('showingStatus') or ''
 
@@ -130,6 +161,7 @@ def parse_indy(screen):
                 upcoming = False,
                 color = COLOR_NOW,
                 poster_file = poster_file or "",
+                fallback_poster_file = still_file,
                 media_type = media_type,
             )
 
