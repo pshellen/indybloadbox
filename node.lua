@@ -12,12 +12,14 @@ local black = resource.create_colored_texture(0, 0, 0, 1)
 local badge_blue = resource.create_colored_texture(2/255, 122/255, 193/255, 1)
 local badge_green = resource.create_colored_texture(0.02, 0.55, 0.18, 1)
 local badge_3d = resource.load_image "3D.png"
+local white = resource.create_colored_texture(1, 1, 1, 1)
 
 local indy_id
 local screen = {name = ""}
 local local_time = ""
 
-local border
+local border, blur
+local clock_offset -- unix time minus sys.now(), sent by the service
 local st, vid_scaler
 local portrait, rotation, logo, logo_name
 local debug = true
@@ -69,28 +71,41 @@ local function compute_layout()
         layout.title_size = short * 0.08
         layout.showtime_size = short * 0.048
         layout.show_screen_name = false
+        layout.show_extras = false
     else
         -- Horizontal screens use the width: poster on the left, branding and
-        -- show information in a dedicated panel on the right.
-        layout.poster_x1 = WIDTH * 0.015
+        -- show information stacked in a dedicated panel on the right.
+        layout.poster_x1 = WIDTH * 0.025
         layout.poster_x2 = WIDTH * 0.63
-        layout.poster_y = HEIGHT * 0.025
-        layout.poster_y2 = HEIGHT * 0.95
+        layout.poster_y = HEIGHT * 0.04
+        layout.poster_y2 = HEIGHT * 0.96
         layout.info_center_x = WIDTH * 0.68
-        layout.badge_center_x = WIDTH * 0.19
+        layout.badge_center_x = layout.info_center_x
         layout.info_w = WIDTH * 0.56
-        layout.logo_y = HEIGHT * 0.09
-        layout.logo_h = HEIGHT * 0.22
-        layout.logo_w = WIDTH * 0.42
-        layout.badge_y = HEIGHT * 0.925
-        layout.badge_h = HEIGHT * 0.05
-        layout.movie_y = HEIGHT * 0.41
-        layout.screen_y = HEIGHT * 0.61
-        layout.screen_name_y = HEIGHT * 0.76
+        layout.logo_y = HEIGHT * 0.06
+        layout.logo_h = HEIGHT * 0.19
+        layout.logo_w = WIDTH * 0.40
+        layout.divider_y = HEIGHT * 0.285
+        layout.divider_w = WIDTH * 0.26
+        layout.badge_y = HEIGHT * 0.33
+        layout.badge_h = HEIGHT * 0.068
+        layout.badge_size = short * 0.05
+        layout.movie_y = HEIGHT * 0.445
+        layout.meta_y = HEIGHT * 0.565
+        layout.meta_size = short * 0.04
+        layout.screen_y = HEIGHT * 0.645
+        layout.countdown_y = HEIGHT * 0.755
+        layout.countdown_size = short * 0.045
+        layout.progress_w = WIDTH * 0.30
+        layout.progress_h = scale_s(10)
+        layout.screen_name_y = HEIGHT * 0.85
         layout.title_size = scale_s(88)
         layout.showtime_size = short * 0.075
-        layout.screen_name_size = short * 0.06
+        layout.screen_name_size = short * 0.05
+        layout.clock_y = HEIGHT * 0.035
+        layout.clock_size = short * 0.04
         layout.show_screen_name = true
+        layout.show_extras = true
     end
     layout.poster_h = layout.poster_y2 - layout.poster_y
     layout.bottom_size = short * 0.048
@@ -188,15 +203,151 @@ local function draw_header_logo()
     end
 end
 
+local function now_unix()
+    if clock_offset then
+        return sys.now() + clock_offset
+    end
+end
+
+local function status_rgb()
+    if screen.show and screen.show.upcoming then
+        return 0.02, 0.55, 0.18
+    end
+    return 2/255, 122/255, 193/255
+end
+
+local function status_fill()
+    if screen.show and screen.show.upcoming then
+        return badge_green
+    end
+    return badge_blue
+end
+
+local function draw_divider()
+    local x1 = layout.info_center_x - layout.divider_w / 2
+    local h = scale_s(4)
+    status_fill():draw(
+        x1, layout.divider_y, x1 + layout.divider_w, layout.divider_y + h
+    )
+end
+
+local function draw_meta_row(show)
+    -- "[PG-13]  ·  1H 38M" centered under the title
+    local size = layout.meta_size
+    local rating = show.rating or ""
+    local runtime = show.runtime_label or ""
+    if rating == "" and runtime == "" then
+        return
+    end
+
+    local pad_x, pad_y = scale_x(14), scale_y(6)
+    local line = math.max(2, scale_s(3))
+    local sep = "  \194\183  "
+    local rating_w = rating ~= "" and (font:width(rating, size) + pad_x * 2) or 0
+    local sep_w = (rating ~= "" and runtime ~= "") and font:width(sep, size) or 0
+    local runtime_w = runtime ~= "" and font:width(runtime, size) or 0
+    local total = rating_w + sep_w + runtime_w
+    local x = layout.info_center_x - total / 2
+    local y = layout.meta_y
+
+    if rating ~= "" then
+        local y1, y2 = y - pad_y, y + size + pad_y
+        white:draw(x, y1, x + rating_w, y1 + line)
+        white:draw(x, y2 - line, x + rating_w, y2)
+        white:draw(x, y1, x + line, y2)
+        white:draw(x + rating_w - line, y1, x + rating_w, y2)
+        font:write(x + pad_x, y, rating, size, 1, 1, 1, 1)
+        x = x + rating_w
+    end
+    if sep_w > 0 then
+        font:write(x, y, sep, size, 1, 1, 1, 0.6)
+        x = x + sep_w
+    end
+    if runtime ~= "" then
+        font:write(x, y, runtime, size, 1, 1, 1, 0.9)
+    end
+end
+
+local function draw_countdown(show)
+    local now = now_unix()
+    if not now or not show.unix then
+        return
+    end
+    local r, g, b = status_rgb()
+    -- brighten slightly so the countdown reads well on the dark backdrop
+    r, g, b = math.min(1, r + 0.2), math.min(1, g + 0.25), math.min(1, b + 0.2)
+    if show.upcoming then
+        local secs = show.unix - now
+        local text
+        if secs <= 60 then
+            text = "STARTING NOW"
+        else
+            text = ("STARTS IN %d MIN"):format(math.ceil(secs / 60))
+        end
+        local size = fit_text(text, layout.countdown_size, layout.info_w, 16)
+        local w = font:width(text, size)
+        font:write(layout.info_center_x - w / 2, layout.countdown_y, text, size, r, g, b, 1)
+    elseif (show.runtime or 0) > 0 then
+        -- Progress through the feature runtime (does not include trailers)
+        local frac = (now - show.unix) / (show.runtime * 60)
+        frac = math.max(0, math.min(1, frac))
+        local x1 = layout.info_center_x - layout.progress_w / 2
+        local y1 = layout.countdown_y + layout.countdown_size / 2 - layout.progress_h / 2
+        local y2 = y1 + layout.progress_h
+        white:draw(x1, y1, x1 + layout.progress_w, y2, 0.2)
+        status_fill():draw(
+            x1, y1, x1 + layout.progress_w * frac, y2
+        )
+    end
+end
+
+local function draw_clock()
+    if not local_time or local_time == "" then
+        return
+    end
+    local size = layout.clock_size
+    local w = font:width(local_time, size)
+    font:write(WIDTH * 0.975 - w, layout.clock_y, local_time, size, 1, 1, 1, 0.8)
+end
+
+local function draw_backdrop(tex)
+    -- Blurred, darkened copy of the poster covering the whole screen.
+    -- The blur comes from sampling low mipmap levels, so the texture
+    -- must be loaded with mipmap = true.
+    if not tex or not blur then
+        return
+    end
+    local w, h = tex:size()
+    local s = math.max(WIDTH / w, HEIGHT / h) * 1.1
+    local dw, dh = w * s, h * s
+    local x1, y1 = (WIDTH - dw) / 2, (HEIGHT - dh) / 2
+    blur:use{
+        dim = 0.42,
+        spread = {0.035, 0.035 * w / h},
+    }
+    tex:draw(x1, y1, x1 + dw, y1 + dh)
+    blur:deactivate()
+end
+
 local function draw_show_info()
     if not screen.show then
         return
     end
     draw_header_logo()
+    if layout.show_extras then
+        draw_divider()
+        draw_clock()
+    end
     draw_badge(screen.show.status_label, screen.show.upcoming)
     draw_title_row(screen.show)
+    if layout.show_extras then
+        draw_meta_row(screen.show)
+    end
     local show_time = "SHOW TIME: " .. ((screen.show.start or ""):upper())
     draw_centered_text(show_time, layout.screen_y, layout.showtime_size, layout.info_w, layout.info_center_x)
+    if layout.show_extras then
+        draw_countdown(screen.show)
+    end
     if layout.show_screen_name then
         draw_centered_text(
             (screen.name or ""):upper(),
@@ -210,6 +361,10 @@ end
 
 util.file_watch("border.glsl", function(raw)
     border = resource.create_shader(raw)
+end)
+
+util.file_watch("blur.glsl", function(raw)
+    blur = resource.create_shader(raw)
 end)
 
 util.file_watch("config.json", function(raw)
@@ -261,6 +416,12 @@ end)
 util.data_mapper{
     ["time/set"] = function(new_local_time)
         local_time = new_local_time
+    end;
+    ["time/unix"] = function(unix)
+        unix = tonumber(unix)
+        if unix then
+            clock_offset = unix - sys.now()
+        end
     end;
 }
 
@@ -353,7 +514,7 @@ end
 
 local function Image(asset_name, duration)
     print("started new image " .. asset_name)
-    local obj = resource.load_image(asset_name)
+    local obj = resource.load_image{file = asset_name, mipmap = true}
     local started
 
     local function start()
@@ -361,6 +522,7 @@ local function Image(asset_name, duration)
     end
     local function draw()
         black:draw(0, 0, WIDTH, HEIGHT)
+        draw_backdrop(obj)
 
         local w, h = obj:size()
         draw_hugged_poster(w, h, function(x1, y1, x2, y2)
@@ -388,7 +550,7 @@ local function Video(asset_name, duration, fallback_asset_name)
     local file = resource.open_file(asset_name)
     local fallback_obj
     if fallback_asset_name and fallback_asset_name ~= "" then
-        fallback_obj = resource.load_image(fallback_asset_name)
+        fallback_obj = resource.load_image{file = fallback_asset_name, mipmap = true}
     end
     local obj
     local video_failed = false
@@ -397,6 +559,7 @@ local function Video(asset_name, duration, fallback_asset_name)
     end
     local function draw()
         black:draw(0, 0, WIDTH, HEIGHT)
+        draw_backdrop(fallback_obj)
 
         if fallback_obj then
             local fw, fh = fallback_obj:size()

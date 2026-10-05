@@ -34,8 +34,23 @@ def pairwise(iterable):
 
 def send_clock():
     node.send('/time/set:%s' % (
-        localize(datetime.utcnow())[0].strftime("%H:%M"),
+        localize(datetime.utcnow())[0].strftime("%-I:%M %p"),
     ))
+    node.send('/time/unix:%d' % int(time.time()))
+
+def runtime_label(minutes):
+    try:
+        minutes = int(minutes or 0)
+    except (TypeError, ValueError):
+        return ''
+    if minutes <= 0:
+        return ''
+    hours, mins = divmod(minutes, 60)
+    if hours and mins:
+        return '%dH %02dM' % (hours, mins)
+    if hours:
+        return '%dH' % hours
+    return '%dM' % mins
 
 def fetch_into(src, dst):
     if os.path.exists(dst):
@@ -155,6 +170,7 @@ def parse_indy(screen):
                 rating = show['movie'].get('rating') or '',
                 rating_reason = show['movie'].get('ratingReason') or '',
                 runtime = show['movie']['duration'],
+                runtime_label = runtime_label(show['movie']['duration']),
                 status = status,
                 status_label = status.upper(),
                 is_3d = is_3d,
