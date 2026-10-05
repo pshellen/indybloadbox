@@ -19,7 +19,7 @@ local local_time = ""
 
 local border
 local st, vid_scaler
-local portrait, rotation, main_logo_name, corner_logo, corner_logo_name
+local portrait, rotation, logo, logo_name
 local debug = true
 local outdated = false
 local layout = {}
@@ -161,16 +161,15 @@ local function draw_bottom_bar(show)
     local show_time = (show.start or ""):upper()
     local y = layout.bottom_y
 
-    -- The on-screen branding must come from the configurable Corner Logo.
-    -- main_logo is the no-show/full-screen fallback and must never override it.
-    if corner_logo then
+    -- All on-screen branding comes from the single configured logo resource.
+    if logo then
         local size = layout.corner_size
         local lx1 = scale_x(8)
         local ly2 = HEIGHT - scale_y(8)
         local ly1 = ly2 - size
-        local lw, lh = corner_logo:size()
+        local lw, lh = logo:size()
         local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        corner_logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
+        logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
         y = ly1 + (size - layout.bottom_size) / 2
     end
 
@@ -191,11 +190,17 @@ util.file_watch("config.json", function(raw)
 
     indy_id = nil
     rotation = 0
-    main_logo_name = config.main_logo.asset_name
-    corner_logo_name = config.corner_logo.asset_name
-    corner_logo = resource.load_image(corner_logo_name)
-    print("configured main logo is " .. tostring(main_logo_name))
-    print("configured corner logo is " .. tostring(corner_logo_name))
+    local primary_logo_name = config.corner_logo and config.corner_logo.asset_name
+    local legacy_logo_name = config.main_logo and config.main_logo.asset_name
+    if primary_logo_name and primary_logo_name ~= "box.png" then
+        logo_name = primary_logo_name
+    elseif legacy_logo_name and legacy_logo_name ~= "box.png" then
+        logo_name = legacy_logo_name
+    else
+        logo_name = primary_logo_name or legacy_logo_name or "box.png"
+    end
+    logo = resource.load_image(logo_name)
+    print("configured logo is " .. tostring(logo_name))
 
     for idx = 1, #config.signs do
         local sign = config.signs[idx]
@@ -233,7 +238,7 @@ local function get_assets()
     if not screen.show then
         return {{
             media = {
-                asset_name = main_logo_name,
+                asset_name = logo_name,
                 type = "fallback",
             },
             duration = 5
@@ -283,13 +288,19 @@ local function Fallback(asset_name, duration)
     end
     local function draw()
         local w, h = obj:size()
-        local max_w = scale_x(500)
-        local max_h = scale_y(220)
+        local max_w = WIDTH * 0.80
+        local max_h = HEIGHT * 0.38
         local box_x = (WIDTH - max_w) / 2
-        local box_y = (HEIGHT - max_h) / 2
+        local box_y = HEIGHT * 0.16
         black:draw(0, 0, WIDTH, HEIGHT)
         local x1, y1, x2, y2 = util.scale_into(max_w, max_h, w, h)
         obj:draw(box_x + x1, box_y + y1, box_x + x2, box_y + y2)
+        draw_centered_text(
+            (screen.name or ""):upper(),
+            HEIGHT * 0.68,
+            math.min(WIDTH, HEIGHT) * 0.09,
+            WIDTH * 0.90
+        )
         return sys.now() - started > duration
     end
     local function unload()
@@ -382,13 +393,13 @@ end
 
 local function Player()
     local offset = 0
-    local current = Fallback(main_logo_name, 5)
+    local current = Fallback(logo_name, 5)
     local next
     local current_key = ""
 
     local function asset_key()
         if not screen.show or screen.show.poster_file == "" then
-            return "fallback:" .. main_logo_name
+            return "fallback:" .. logo_name
         end
         return (screen.show.media_type or "image") .. ":" .. screen.show.poster_file
     end
@@ -403,7 +414,7 @@ local function Player()
             current_key = key
             next = nil
             offset = 0
-            current = Fallback(main_logo_name, 5)
+            current = Fallback(logo_name, 5)
             current.start()
         end
 
