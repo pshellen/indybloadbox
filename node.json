@@ -56,12 +56,20 @@
         "title": "Player settings",
         "type": "section"
     }, {
-        "title": "Logo",
+        "title": "Corner Logo",
         "ui_width": 3,
         "name": "corner_logo",
         "type": "resource",
         "valid": ["image"],
-        "hint": "Logo used for all on-screen branding, including the no-show fallback. Best use a transparent PNG image.",
-        "default": "box.png"
+        "hint": "Brand logo shown beside the show information. Best use a transparent PNG image.",
+        "default": "logo.png"
+    }, {
+        "title": "Fallback Logo",
+        "ui_width": 3,
+        "name": "main_logo",
+        "type": "resource",
+        "valid": ["image"],
+        "hint": "Full-screen logo shown when there is no current movie.",
+        "default": "flagship.png"
     }]
 }
