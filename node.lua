@@ -62,7 +62,7 @@ local function compute_layout()
         layout.poster_y = HEIGHT * 0.14
         layout.poster_y2 = HEIGHT * 0.86
         layout.movie_y = HEIGHT * 0.075
-        layout.screen_y = HEIGHT * 0.015
+        layout.screen_y = HEIGHT * 0.03
         layout.title_size = short * 0.08
     else
         layout.logo_y = HEIGHT * 0.01
