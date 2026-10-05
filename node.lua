@@ -45,11 +45,11 @@ local function compute_layout()
     layout.poster_pad = scale_x(4)
     layout.poster_x1 = layout.poster_pad
     layout.poster_x2 = WIDTH - layout.poster_pad
-    layout.badge_w = scale_x(286)
+    layout.badge_w = scale_x(572)
     -- Size off the shorter side so portrait stays readable
     local short = math.min(WIDTH, HEIGHT)
     layout.badge_3d_size = short * 0.09
-    layout.badge_size = scale_s(38.4)
+    layout.badge_size = scale_s(76.8)
     if portrait then
         -- A 270-degree screen transform reverses logical Y across the
         -- physical display. These values intentionally run bottom-to-top so
@@ -103,10 +103,10 @@ local function draw_badge(text, upcoming)
         return
     end
 
-    local size = fit_text(text, layout.badge_size, layout.badge_w - scale_x(20), 12)
+    local size = fit_text(text, layout.badge_size, layout.badge_w - scale_x(40), 20)
     local text_w = font:width(text, size)
-    local pad_x = scale_x(14)
-    local pad_y = scale_y(9)
+    local pad_x = scale_x(28)
+    local pad_y = scale_y(5)
     local box_w = math.min(layout.badge_w, text_w + pad_x * 2)
     local box_h = math.max(layout.badge_h, size + pad_y * 2)
     local x1 = (WIDTH - box_w) / 2
