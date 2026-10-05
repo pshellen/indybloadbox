@@ -143,23 +143,10 @@ local function draw_title_row(show)
     font:write(x, y, title, size, 1, 1, 1, 1)
 end
 
-local function draw_show_info()
-    if not screen.show then
-        return
-    end
-    draw_badge(screen.show.status_label, screen.show.upcoming)
-    draw_title_row(screen.show)
-    draw_centered_text((screen.name or ""):upper(), layout.screen_y, layout.bottom_size, WIDTH - scale_x(40))
-    draw_bottom_bar(screen.show)
-end
-
 local function draw_bottom_bar(show)
     if not show then
         return
     end
-
-    local show_time = (show.start or ""):upper()
-    local y = layout.bottom_y
 
     -- All on-screen branding comes from the single configured logo resource.
     if logo then
@@ -170,12 +157,18 @@ local function draw_bottom_bar(show)
         local lw, lh = logo:size()
         local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
         logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
-        y = ly1 + (size - layout.bottom_size) / 2
     end
+end
 
-    local time_label = "Show time: " .. show_time
-    local time_w = font:width(time_label, layout.bottom_size)
-    font:write(WIDTH - time_w - scale_x(40), y, time_label, layout.bottom_size, 1, 1, 1, 1)
+local function draw_show_info()
+    if not screen.show then
+        return
+    end
+    draw_badge(screen.show.status_label, screen.show.upcoming)
+    draw_title_row(screen.show)
+    local show_time = "SHOW TIME: " .. ((screen.show.start or ""):upper())
+    draw_centered_text(show_time, layout.screen_y, layout.bottom_size, WIDTH - scale_x(40))
+    draw_bottom_bar(screen.show)
 end
 
 util.file_watch("border.glsl", function(raw)
