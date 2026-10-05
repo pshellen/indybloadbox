@@ -51,15 +51,18 @@ local function compute_layout()
     layout.badge_3d_size = short * 0.09
     layout.badge_size = scale_s(76.8)
     if portrait then
-        layout.logo_y = HEIGHT * 0.015
+        -- A 270-degree screen transform reverses logical Y across the
+        -- physical display. These values intentionally run bottom-to-top so
+        -- the physical order is logo, status, poster, title, showtime.
+        layout.logo_y = HEIGHT * 0.88
         layout.logo_h = HEIGHT * 0.10
         layout.logo_w = WIDTH * 0.58
-        layout.badge_y = HEIGHT * 0.13
-        layout.badge_h = HEIGHT * 0.08
-        layout.poster_y = HEIGHT * 0.23
-        layout.poster_y2 = HEIGHT * 0.75
-        layout.movie_y = HEIGHT * 0.78
-        layout.screen_y = HEIGHT * 0.86
+        layout.badge_y = HEIGHT * 0.80
+        layout.badge_h = HEIGHT * 0.10
+        layout.poster_y = HEIGHT * 0.14
+        layout.poster_y2 = HEIGHT * 0.86
+        layout.movie_y = HEIGHT * 0.075
+        layout.screen_y = HEIGHT * 0.015
         layout.title_size = short * 0.08
     else
         layout.logo_y = HEIGHT * 0.01
