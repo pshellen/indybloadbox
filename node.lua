@@ -42,28 +42,38 @@ local function scale_s(s)
 end
 
 local function compute_layout()
-    layout.poster_y = scale_y(56)
-    layout.poster_h = scale_y(700)
     layout.poster_pad = scale_x(4)
     layout.poster_x1 = layout.poster_pad
     layout.poster_x2 = WIDTH - layout.poster_pad
-    layout.poster_y2 = layout.poster_y + layout.poster_h
-    layout.badge_h = scale_y(117)
     layout.badge_w = scale_x(572)
-    layout.badge_y = scale_y(28)
-    layout.movie_y = scale_y(780)
-    layout.screen_y = scale_y(860)
-    layout.bottom_y = scale_y(960)
     -- Size off the shorter side so portrait stays readable
     local short = math.min(WIDTH, HEIGHT)
-    layout.corner_size = short * 0.18
     layout.badge_3d_size = short * 0.09
     layout.badge_size = scale_s(76.8)
     if portrait then
+        layout.logo_y = HEIGHT * 0.015
+        layout.logo_h = HEIGHT * 0.10
+        layout.logo_w = WIDTH * 0.58
+        layout.badge_y = HEIGHT * 0.13
+        layout.badge_h = HEIGHT * 0.08
+        layout.poster_y = HEIGHT * 0.23
+        layout.poster_y2 = HEIGHT * 0.75
+        layout.movie_y = HEIGHT * 0.78
+        layout.screen_y = HEIGHT * 0.86
         layout.title_size = short * 0.08
     else
+        layout.logo_y = HEIGHT * 0.01
+        layout.logo_h = HEIGHT * 0.10
+        layout.logo_w = WIDTH * 0.42
+        layout.badge_y = HEIGHT * 0.13
+        layout.badge_h = HEIGHT * 0.10
+        layout.poster_y = HEIGHT * 0.25
+        layout.poster_y2 = HEIGHT * 0.72
+        layout.movie_y = HEIGHT * 0.75
+        layout.screen_y = HEIGHT * 0.86
         layout.title_size = scale_s(64)
     end
+    layout.poster_h = layout.poster_y2 - layout.poster_y
     layout.bottom_size = short * 0.048
 end
 
@@ -143,20 +153,12 @@ local function draw_title_row(show)
     font:write(x, y, title, size, 1, 1, 1, 1)
 end
 
-local function draw_bottom_bar(show)
-    if not show then
-        return
-    end
-
-    -- All on-screen branding comes from the single configured logo resource.
+local function draw_header_logo()
     if logo then
-        local size = layout.corner_size
-        local lx1 = scale_x(8)
-        local ly2 = HEIGHT - scale_y(8)
-        local ly1 = ly2 - size
         local lw, lh = logo:size()
-        local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
+        local ix1, iy1, ix2, iy2 = util.scale_into(layout.logo_w, layout.logo_h, lw, lh)
+        local lx1 = (WIDTH - layout.logo_w) / 2
+        logo:draw(lx1 + ix1, layout.logo_y + iy1, lx1 + ix2, layout.logo_y + iy2)
     end
 end
 
@@ -164,11 +166,11 @@ local function draw_show_info()
     if not screen.show then
         return
     end
+    draw_header_logo()
     draw_badge(screen.show.status_label, screen.show.upcoming)
     draw_title_row(screen.show)
     local show_time = "SHOW TIME: " .. ((screen.show.start or ""):upper())
     draw_centered_text(show_time, layout.screen_y, layout.bottom_size, WIDTH - scale_x(40))
-    draw_bottom_bar(screen.show)
 end
 
 util.file_watch("border.glsl", function(raw)
