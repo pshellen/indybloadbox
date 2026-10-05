@@ -19,7 +19,7 @@ local local_time = ""
 
 local border
 local st, vid_scaler
-local portrait, rotation, main_logo, main_logo_name, corner_logo
+local portrait, rotation, main_logo_name, corner_logo, corner_logo_name
 local debug = true
 local outdated = false
 local layout = {}
@@ -161,16 +161,9 @@ local function draw_bottom_bar(show)
     local show_time = (show.start or ""):upper()
     local y = layout.bottom_y
 
-    if main_logo then
-        local size = layout.corner_size
-        local lx1 = scale_x(8)
-        local ly2 = HEIGHT - scale_y(8)
-        local ly1 = ly2 - size
-        local lw, lh = main_logo:size()
-        local ix1, iy1, ix2, iy2 = util.scale_into(size, size, lw, lh)
-        main_logo:draw(lx1 + ix1, ly1 + iy1, lx1 + ix2, ly1 + iy2)
-        y = ly1 + (size - layout.bottom_size) / 2
-    elseif corner_logo then
+    -- The on-screen branding must come from the configurable Corner Logo.
+    -- main_logo is the no-show/full-screen fallback and must never override it.
+    if corner_logo then
         local size = layout.corner_size
         local lx1 = scale_x(8)
         local ly2 = HEIGHT - scale_y(8)
@@ -199,8 +192,10 @@ util.file_watch("config.json", function(raw)
     indy_id = nil
     rotation = 0
     main_logo_name = config.main_logo.asset_name
-    main_logo = resource.load_image(config.main_logo.asset_name)
-    corner_logo = resource.load_image(config.corner_logo.asset_name)
+    corner_logo_name = config.corner_logo.asset_name
+    corner_logo = resource.load_image(corner_logo_name)
+    print("configured main logo is " .. tostring(main_logo_name))
+    print("configured corner logo is " .. tostring(corner_logo_name))
 
     for idx = 1, #config.signs do
         local sign = config.signs[idx]
