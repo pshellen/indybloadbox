@@ -22,6 +22,7 @@ local border, blur
 local clock_offset -- unix time minus sys.now(), sent by the service
 local st, vid_scaler
 local portrait, rotation, logo, logo_name
+local badge_imgs = {} -- {now = image, next = image}; nil entries fall back to drawn badges
 local debug = true
 local outdated = false
 local layout = {}
@@ -51,27 +52,43 @@ local function compute_layout()
     layout.badge_3d_size = short * 0.09
     layout.badge_size = scale_s(76.8)
     if portrait then
-        layout.poster_x1 = layout.poster_pad
-        layout.poster_x2 = WIDTH - layout.poster_pad
+        -- Portrait "marquee" layout, physical top to bottom:
+        -- title, show time, status badge, poster, rating/runtime,
+        -- countdown/progress, then logo + screen number along the bottom.
+        -- Logical Y already matches the physical top-down order on a rotated
+        -- screen (text is always drawn upright), so no flipping is needed.
+        layout.poster_x1 = WIDTH * 0.06
+        layout.poster_x2 = WIDTH * 0.94
         layout.info_center_x = WIDTH / 2
         layout.badge_center_x = layout.info_center_x
-        layout.info_w = WIDTH - scale_x(40)
-        -- A 270-degree screen transform reverses logical Y across the
-        -- physical display. These values intentionally run bottom-to-top so
-        -- the physical order is logo, status, poster, title, showtime.
-        layout.logo_y = HEIGHT * 0.88
-        layout.logo_h = HEIGHT * 0.10
-        layout.logo_w = WIDTH * 0.58
-        layout.badge_y = HEIGHT * 0.825
-        layout.badge_h = HEIGHT * 0.05
-        layout.poster_y = HEIGHT * 0.14
-        layout.poster_y2 = HEIGHT * 0.86
-        layout.movie_y = HEIGHT * 0.075
-        layout.screen_y = HEIGHT * 0.03
-        layout.title_size = short * 0.08
-        layout.showtime_size = short * 0.048
-        layout.show_screen_name = false
-        layout.show_extras = false
+        layout.badge_w = WIDTH * 0.60
+        layout.info_w = WIDTH * 0.92
+        layout.movie_y = HEIGHT * 0.03
+        layout.title_size = short * 0.085
+        layout.screen_y = HEIGHT * 0.09
+        layout.showtime_size = short * 0.08
+        layout.badge_y = HEIGHT * 0.152
+        layout.badge_h = HEIGHT * 0.04
+        layout.badge_size = short * 0.055
+        layout.poster_y = HEIGHT * 0.21
+        layout.poster_y2 = HEIGHT * 0.805
+        layout.meta_y = HEIGHT * 0.83
+        layout.meta_size = short * 0.045
+        layout.countdown_y = HEIGHT * 0.875
+        layout.countdown_size = short * 0.05
+        layout.progress_w = WIDTH * 0.60
+        layout.progress_h = scale_s(12)
+        layout.logo_x1 = WIDTH * 0.05
+        layout.logo_y = HEIGHT * 0.925
+        layout.logo_h = HEIGHT * 0.06
+        layout.logo_w = WIDTH * 0.48
+        layout.screen_name_y = HEIGHT * 0.935
+        layout.screen_name_size = short * 0.055
+        layout.screen_name_right = WIDTH * 0.95
+        layout.divider_y = nil
+        layout.clock_y = nil
+        layout.show_screen_name = true
+        layout.show_extras = true
     else
         -- Horizontal screens use the width: poster on the left, branding and
         -- show information stacked in a dedicated panel on the right.
@@ -104,6 +121,8 @@ local function compute_layout()
         layout.screen_name_size = short * 0.05
         layout.clock_y = HEIGHT * 0.035
         layout.clock_size = short * 0.04
+        layout.logo_x1 = nil
+        layout.screen_name_right = nil
         layout.show_screen_name = true
         layout.show_extras = true
     end
@@ -139,8 +158,28 @@ local function draw_badge(text, upcoming)
     local text_w = font:width(text, size)
     local pad_x = scale_x(28)
     local pad_y = scale_y(5)
-    local box_w = math.min(layout.badge_w, text_w + pad_x * 2)
     local box_h = math.max(layout.badge_h, size + pad_y * 2)
+
+    -- Badge artwork from the package settings, scaled to the badge height
+    local img = badge_imgs[upcoming and "next" or "now"]
+    if img then
+        local ok, iw, ih = pcall(img.size, img)
+        if ok and iw and ih and iw > 0 and ih > 0 then
+            local h = box_h * 1.5 -- art is scaled up a bit and includes a small transparent margin
+            local w = h * iw / ih
+            if w > layout.badge_w then
+                w = layout.badge_w
+                h = w * ih / iw
+            end
+            local x1 = layout.badge_center_x - w / 2
+            local y1 = layout.badge_y + (box_h - h) / 2
+            img:draw(x1, y1, x1 + w, y1 + h)
+            return
+        end
+    end
+
+    -- Fallback: plain colored box with rendered text
+    local box_w = math.min(layout.badge_w, text_w + pad_x * 2)
     local x1 = layout.badge_center_x - box_w / 2
     local y1 = layout.badge_y
     local fill = upcoming and badge_green or badge_blue
@@ -153,6 +192,16 @@ local function draw_badge(text, upcoming)
         size,
         1, 1, 1, 1
     )
+end
+
+local function load_badge(option, default)
+    local name = (option and option.asset_name) or default
+    local ok, img = pcall(resource.load_image, name)
+    if ok then
+        print("badge art " .. name)
+        return img
+    end
+    print("badge art failed to load: " .. tostring(name))
 end
 
 local function draw_title_row(show)
@@ -199,6 +248,10 @@ local function draw_header_logo()
         local lw, lh = logo:size()
         local ix1, iy1, ix2, iy2 = util.scale_into(layout.logo_w, layout.logo_h, lw, lh)
         local lx1 = layout.info_center_x - layout.logo_w / 2
+        if layout.logo_x1 then
+            -- left-anchored: hug the left edge of the logo box
+            lx1 = layout.logo_x1 - ix1
+        end
         logo:draw(lx1 + ix1, layout.logo_y + iy1, lx1 + ix2, layout.logo_y + iy2)
     end
 end
@@ -334,8 +387,10 @@ local function draw_show_info()
         return
     end
     draw_header_logo()
-    if layout.show_extras then
+    if layout.divider_y then
         draw_divider()
+    end
+    if layout.clock_y then
         draw_clock()
     end
     draw_badge(screen.show.status_label, screen.show.upcoming)
@@ -348,7 +403,11 @@ local function draw_show_info()
     if layout.show_extras then
         draw_countdown(screen.show)
     end
-    if layout.show_screen_name then
+    if layout.show_screen_name and layout.screen_name_right then
+        local name = (screen.name or ""):upper()
+        local size = fit_text(name, layout.screen_name_size, WIDTH * 0.40, 16)
+        font:write(layout.screen_name_right - font:width(name, size), layout.screen_name_y, name, size, 1, 1, 1, 1)
+    elseif layout.show_screen_name then
         draw_centered_text(
             (screen.name or ""):upper(),
             layout.screen_name_y,
@@ -386,6 +445,14 @@ util.file_watch("config.json", function(raw)
     end
     logo = resource.load_image(logo_name)
     print("configured logo is " .. tostring(logo_name))
+
+    for _, img in pairs(badge_imgs) do
+        img:dispose()
+    end
+    badge_imgs = {
+        now = load_badge(config.now_badge, "badge-now.png"),
+        next = load_badge(config.next_badge, "badge-next.png"),
+    }
 
     for idx = 1, #config.signs do
         local sign = config.signs[idx]

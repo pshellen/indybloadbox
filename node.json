@@ -71,5 +71,21 @@
         "valid": ["image"],
         "hint": "Compatibility setting for setups created with an earlier package version. The primary Logo above takes precedence.",
         "default": "box.png"
+    }, {
+        "title": "Now Playing badge",
+        "ui_width": 3,
+        "name": "now_badge",
+        "type": "resource",
+        "valid": ["image"],
+        "hint": "Badge art shown while a show is playing. Transparent PNG, about 800x160 (5:1).",
+        "default": "badge-now.png"
+    }, {
+        "title": "Next Showing badge",
+        "ui_width": 3,
+        "name": "next_badge",
+        "type": "resource",
+        "valid": ["image"],
+        "hint": "Badge art shown before the next show starts. Transparent PNG, about 800x160 (5:1).",
+        "default": "badge-next.png"
     }]
 }
