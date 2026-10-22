@@ -1,9 +1,7 @@
 {
-    "name": "Indy Single Screen Info",
-    "author": "Florian Wesch <fw@info-beamer.com>",
-    "desc": "Handles a single screen and shows information based on Indy API.",
-    "runtime": {
-        "antialias": true
-    },
-    "platforms": ["pi/epoch-1", "pi/epoch-2"]
+  "name": "FSCinema Menu Boards",
+  "author": "Flagship Cinemas",
+  "desc": "Live FSCinema menu boards for info-beamer Hosted. Compatible with Raspberry Pi 3, Pi 4, and Pi 5.",
+  "version": "1.8.4",
+  "platforms": ["pi-3", "pi-4", "pi-5"]
 }

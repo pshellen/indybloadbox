@@ -1,67 +1,197 @@
 {
-    "name": "Indy Sign",
-    "permissions": {
-        "network": "Remote API access"
-    },
-    "options": [{
-        "title": "Signs",
-        "doc_link": true,
-        "name": "signs_section",
-        "type": "section"
-    }, {
-        "title": "Add all signs",
-        "name": "signs",
-        "type": "list",
-        "itemname": "Sign",
-        "items": [{
-            "title": "Device Serial",
-            "ui_width": 4,
-            "name": "serial",
-            "type": "device",
-            "default": ""
-        }, {
-            "title": "Indy ID",
-            "ui_width": 2,
-            "name": "indy_id",
-            "type": "integer"
-        }, {
-            "title": "Rotation",
-            "ui_width": 2,
-            "hint": "Screen rotates clock-wise",
-            "name": "rotation",
-            "type": "select",
-            "options": [
-                [0, "None"],
-                [90, "90°"],
-                [180, "180°"],
-                [270, "270°"]
-            ],
-            "default": 0
-        }, {
-            "title": "Blank",
-            "ui_width": 2,
-            "name": "blank",
-            "type": "boolean",
-            "default": false
-        }, {
-            "title": "Debug",
-            "ui_width": 2,
-            "name": "debug",
-            "type": "boolean",
-            "default": false
-        }]
-    },
-
+  "name": "FSCinema Menu Board",
+  "permissions": {
+    "network": "Fetches the configured menu manifest and its public image/video assets."
+  },
+  "options": [
     {
-        "title": "Player settings",
-        "type": "section"
-    }, {
-        "title": "Logo",
-        "ui_width": 3,
-        "name": "corner_logo",
-        "type": "resource",
-        "valid": ["image"],
-        "hint": "Logo used for all on-screen branding, including the no-show fallback. Best use a transparent PNG image.",
-        "default": "box.png"
-    }]
+      "title": "Manifest endpoint",
+      "name": "endpoint",
+      "type": "string",
+      "default": "https://emcxmnrhplzlbsowxeuk.supabase.co/functions/v1/menu-board-manifest"
+    },
+    {
+      "title": "Location",
+      "name": "location",
+      "type": "select",
+      "options": [
+        ["2dc32f05-a243-4679-b933-be77c8a6f7c8", "Auburn"],
+        ["bdb4f395-6ba8-40f1-b301-f25abb6325c2", "Cambridge"],
+        ["4483f559-c3a5-482b-9149-c4320cf26066", "Chester NY"],
+        ["adf66236-7cad-42ef-b746-da8c391bb45b", "Chestertown"],
+        ["eab33d80-ebe9-4763-b816-fec3101efd6b", "Churchville"],
+        ["36fddc53-a707-4b6f-aaf6-7bbbf8a61d05", "Easton"],
+        ["b2b3667d-8e0f-46c2-9b1c-b21af27c6f72", "Eastpoint"],
+        ["0e68b275-f913-418b-9524-b89c6868783d", "Falmouth"],
+        ["7476d133-65a5-4ff5-8702-12566886a2a0", "Harbor East"],
+        ["474bab52-9d2c-442f-b824-7ee359335933", "Matamoras"],
+        ["a6546940-22b6-4eaf-9d48-5460b270f56a", "Monroe"],
+        ["c3ee6946-3baf-4e29-81db-52b8b22814d1", "Ocean City"],
+        ["46bf6fef-754e-4365-a4ef-b9d7efe5e756", "Palmyra"],
+        ["15bc0b84-0766-4537-8936-6a5a1f1345c5", "Pottstown"],
+        ["f1dc88b0-c354-4407-ba84-391b28690437", "Prince Frederick"],
+        ["4a9c5c94-b5d7-41e9-916e-750f34029c4c", "Thomaston"],
+        ["d48e155f-a676-47fc-989b-f35675c4361e", "Watertower"],
+        ["83520416-3277-45a1-8cb9-149f87b48504", "Waterville"],
+        ["2dca9baf-cdab-4406-9947-053d20744971", "Wellington"],
+        ["c61a99d7-9359-481f-8188-49f2c56a98a5", "Wells"],
+        ["custom", "Custom location ID"]
+      ],
+      "default": "2dca9baf-cdab-4406-9947-053d20744971"
+    },
+    {
+      "title": "Custom location ID",
+      "name": "location_id",
+      "type": "string",
+      "default": "2dca9baf-cdab-4406-9947-053d20744971"
+    },
+    {
+      "title": "Screen",
+      "name": "screen_id",
+      "type": "select",
+      "options": [["combo", "Combo"], ["alacarte", "A la carte"], ["full", "Full"], ["hotfoods", "Hot Foods"]],
+      "default": "combo"
+    },
+    {
+      "title": "Bearer token",
+      "name": "token",
+      "type": "string",
+      "ui_type": "password",
+      "default": "",
+      "placeholder": "MENU_MANIFEST_TOKEN"
+    },
+    {
+      "title": "Display profile",
+      "name": "display_profile",
+      "type": "select",
+      "options": [["3840x1080", "Dual HD horizontal (3840 × 1080)"], ["2160x3840", "4K vertical (2160 × 3840)"], ["1920x1080", "HD horizontal (1920 × 1080)"], ["3840x2160", "4K horizontal (3840 × 2160)"]],
+      "default": "3840x1080"
+    },
+    {
+      "title": "Output rotation",
+      "name": "output_rotation",
+      "type": "select",
+      "options": [["0", "No rotation"], ["90", "90° clockwise"], ["180", "180°"], ["270", "270° clockwise"]],
+      "default": "0"
+    },
+    {
+      "title": "Playback mode",
+      "name": "playback_mode",
+      "type": "select",
+      "options": [["static", "Configured screen"], ["alternate", "Alternate combo / a la carte"], ["alternate_combo_hotfoods", "Alternate combo / Hot Foods"], ["alternate_alacarte_hotfoods", "Alternate a la carte / Hot Foods"]],
+      "default": "static"
+    },
+    {
+      "title": "Always hide Hot Foods",
+      "name": "hide_hotfoods_always",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "title": "Page duration",
+      "name": "page_duration_seconds",
+      "type": "integer",
+      "default": 25,
+      "min": 5,
+      "max": 300
+    },
+    {
+      "title": "Combo upgrades placement",
+      "name": "combo_upgrades_placement",
+      "type": "select",
+      "options": [["popcorn", "Bottom of Popcorn"], ["snacks", "Bottom of Snacks"], ["drinks", "Bottom of Refreshing Drinks"], ["separate", "Separate card"]],
+      "default": "popcorn"
+    },
+    {
+      "title": "Combo font size (%)",
+      "name": "combo_font_scale_percent",
+      "type": "integer",
+      "default": 100,
+      "min": 75,
+      "max": 250
+    },
+    {
+      "title": "A la carte font size (%)",
+      "name": "alacarte_font_scale_percent",
+      "type": "integer",
+      "default": 100,
+      "min": 75,
+      "max": 250
+    },
+    {
+      "title": "Refreshing Drinks title font size (%)",
+      "name": "refreshing_drinks_title_font_scale_percent",
+      "type": "integer",
+      "default": 100,
+      "min": 75,
+      "max": 250
+    },
+    {
+      "title": "Refreshing Drinks font size (%)",
+      "name": "refreshing_drinks_font_scale_percent",
+      "type": "integer",
+      "default": 100,
+      "min": 75,
+      "max": 250
+    },
+    {
+      "title": "Hot Foods font size (%)",
+      "name": "hotfoods_font_scale_percent",
+      "type": "integer",
+      "default": 100,
+      "min": 75,
+      "max": 250
+    },
+    {
+      "title": "Sales tax font size (%)",
+      "name": "tax_font_scale_percent",
+      "type": "integer",
+      "default": 100,
+      "min": 50,
+      "max": 250
+    },
+    {
+      "title": "Refresh interval",
+      "name": "refresh_seconds",
+      "type": "integer",
+      "default": 600,
+      "min": 60,
+      "max": 86400
+    },
+    {
+      "title": "Show advertisements",
+      "name": "show_ads",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "title": "Theme / takeover overlay",
+      "name": "theme_overlay",
+      "type": "resource",
+      "valid": ["image"],
+      "features": ["image4k"],
+      "default": "transparent-overlay.png"
+    },
+    {
+      "title": "Overlay fit",
+      "name": "theme_overlay_fit",
+      "type": "select",
+      "options": [["stretch", "Stretch to screen"], ["contain", "Contain"], ["cover", "Cover / crop"]],
+      "default": "stretch"
+    },
+    {
+      "title": "Overlay opacity (%)",
+      "name": "theme_overlay_opacity_percent",
+      "type": "integer",
+      "default": 100,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "title": "Debug status",
+      "name": "debug",
+      "type": "boolean",
+      "default": false
+    }
+  ]
 }

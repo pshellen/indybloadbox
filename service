@@ -1,244 +1,554 @@
 #!/usr/bin/python2.7
-import sys, pytz, time, threading, os, traceback, requests, json, calendar, tempfile
-from itertools import tee, islice, chain
-from datetime import datetime
-from hosted import config, node, device
-config.restart_on_update()
+"""Fetch and validate menu manifests; atomically publish state for node.lua."""
+from __future__ import print_function
+import hashlib
+import json
+import os
+import errno
+import shutil
+import sys
+import time
+try:
+    from urllib.parse import urlencode, urlparse
+except ImportError:
+    from urllib import urlencode
+    from urlparse import urlparse
+import requests
 
-DEVICE_TZ = pytz.timezone(config.metadata['timezone'])
+ROOT = os.path.dirname(os.path.abspath(__file__))
+CACHE = ROOT
+STATE = os.path.join(ROOT, "state.json")
+CONFIG = os.path.join(ROOT, "config.json")
+SCRATCH_ROOT = os.environ.get("SCRATCH")
+PERSIST = os.path.join(SCRATCH_ROOT, "fscinema-menu-board") if SCRATCH_ROOT else None
+PERSIST_STATE = os.path.join(PERSIST, "last-good-state.json") if PERSIST else None
+ALLOWED_MEDIA = {"image", "video"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+ZONEINFO_ROOT = "/usr/share/zoneinfo"
+try:
+    STRING_TYPES = (basestring,)
+except NameError:
+    STRING_TYPES = (str,)
 
-#  Message-Id: <1465504497.2051037.633156353.268DA54A@webmail.messagingengine.com>
-#  Message-Id: <CAHCqjYM87qcOTtXTJO-ZcV835q6P2SPa7=mW2ZkSbWmD_h7MOA@mail.gmail.com>
-#  In minutes
-BEFORE_FIRST_SHOW = 60
-BEFORE_OTHER_SHOWS = 30
-UPCOMING_MINUTES = 25
 
-COLOR_NOW = (0.45, 0.78, 1.0, 1.0)      # light blue border / badge
-COLOR_UPCOMING = (0.02, 0.55, 0.18, 1.0) # green
+def log(*parts):
+    sys.stdout.write(" ".join(str(part) for part in parts) + "\n")
+    sys.stdout.flush()
 
-IMGIX_BASE = "https://indy-systems.imgix.net/" 
-UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
 
-def localize(dt):
-    unix = calendar.timegm(dt.timetuple())
-    dt = dt.replace(tzinfo=pytz.utc)
-    dt = dt.astimezone(DEVICE_TZ)
-    dt = dt.replace(tzinfo=None)
-    return dt, unix
-
-def pairwise(iterable):
-    a, b = tee(iterable)
-    b = chain(islice(b, 1, None), [None])
-    return zip(a, b)
-
-def send_clock():
-    node.send('/time/set:%s' % (
-        localize(datetime.utcnow())[0].strftime("%H:%M"),
-    ))
-
-def fetch_into(src, dst):
-    if os.path.exists(dst):
-        return dst
+def read_json(path, default=None):
     try:
-        r = requests.get(
-            src,
-            headers = {
-                'User-Agent': UA,
-            },
-            timeout = 10,
-        )
-        r.raise_for_status()
-        with tempfile.NamedTemporaryFile(dir=os.getcwd()) as tmp:
-            tmp.write(r.content)
-            tmp.flush()
-            os.rename(tmp.name, dst)
-            tmp.delete = False
-        return dst
-    except Exception as err:
-        traceback.print_exc()
-        time.sleep(30) # enforce minimum error delay
+        with open(path, "r") as handle:
+            return json.load(handle)
+    except (IOError, OSError, ValueError):
+        return default
+
+
+def atomic_json(path, value):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as handle:
+        json.dump(value, handle, separators=(",", ":"))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.rename(tmp, path)
+
+
+def atomic_copy(source, destination):
+    temp = destination + ".part"
+    with open(source, "rb") as src, open(temp, "wb") as out:
+        shutil.copyfileobj(src, out, 1024 * 256)
+        out.flush()
+        os.fsync(out.fileno())
+    os.rename(temp, destination)
+
+
+def location_localtime(manifest, timestamp=None):
+    """Return local time for the manifest location without changing process timezone."""
+    if timestamp is None:
+        timestamp = time.time()
+    timezone_name = str((manifest.get("location") or {}).get("timezone") or "").strip()
+    if not timezone_name or not hasattr(time, "tzset"):
+        return time.localtime(timestamp)
+    zone_root = os.path.realpath(ZONEINFO_ROOT)
+    zone_path = os.path.realpath(os.path.join(zone_root, timezone_name))
+    if not zone_path.startswith(zone_root + os.sep) or not os.path.isfile(zone_path):
+        return time.localtime(timestamp)
+    had_timezone = "TZ" in os.environ
+    previous_timezone = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = timezone_name
+        time.tzset()
+        return time.localtime(timestamp)
+    finally:
+        if had_timezone:
+            os.environ["TZ"] = previous_timezone
+        else:
+            del os.environ["TZ"]
+        time.tzset()
+
+
+def location_day_of_week(manifest, timestamp=None):
+    """Return Sunday=0 through Saturday=6 in the manifest location timezone."""
+    return (location_localtime(manifest, timestamp).tm_wday + 1) % 7
+
+
+def formatted_price(value):
+    try:
+        return "$%.2f" % float(value)
+    except (TypeError, ValueError):
         return None
 
-def fetch_indy(screen_id):
+
+def resolve_special_day_prices(manifest, timestamp=None):
+    """Add an effective price for matching day_prices without replacing base prices."""
+    current_day = location_day_of_week(manifest, timestamp)
+    values = list(manifest.get("combos", []))
+    for category in manifest.get("categories", []):
+        values.extend(category.get("items", []))
+    for category in manifest.get("hotfoods_categories", []):
+        values.extend(category.get("items", []))
+    for value in values:
+        value.pop("effective_display_price", None)
+        value.pop("special_day_price_active", None)
+        for day_price in value.get("day_prices", []) or []:
+            try:
+                matches = int(day_price.get("day_of_week")) == current_day
+            except (AttributeError, TypeError, ValueError):
+                matches = False
+            if not matches:
+                continue
+            display_price = day_price.get("display_price") or formatted_price(day_price.get("price"))
+            if display_price:
+                value["effective_display_price"] = display_price
+                value["special_day_price_active"] = True
+            break
+    return manifest
+
+
+def clock_seconds(value):
     try:
-        r = requests.post(
-            "https://api-us.indy.systems/graphql", 
-            headers = {
-                'User-Agent': UA,
-                'Accept': 'application/graphql-response+json',
-                'Content-Type': 'application/json',
-            },
-            timeout = 5,
-            data = '''
-                {"query": "{ screen(id: \\"%d\\") {name todaysShowings { time current past showingBadges { id title displayName } movie { name posterImage animatedPosterVideo showingStatus duration rating ratingReason }}}}"}
-            '''.strip() % (screen_id,)
-        )
-        r.raise_for_status()
-        return r.json()['data']['screen']
-    except Exception as err:
-        traceback.print_exc()
-        time.sleep(30) # enforce minimum error delay
+        parts = [int(part) for part in str(value).split(":")]
+        if len(parts) == 2:
+            parts.append(0)
+        if len(parts) != 3:
+            return None
+        hour, minute, second = parts
+        if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+            return None
+        return hour * 3600 + minute * 60 + second
+    except (TypeError, ValueError):
         return None
 
-def parse_indy(screen):
-    now = time.time()
 
-    def iter_shows():
-        for show in screen['todaysShowings']:
-            start, unix = localize(datetime.strptime(show['time'], "%Y-%m-%dT%H:%M:%SZ"))
-            poster = show['movie']['posterImage']
-            animated = show['movie'].get('animatedPosterVideo')
-            poster_file = ""
-            media_type = "image"
+def inside_hidden_window(current, start, end):
+    if start is None or end is None or start == end:
+        return False
+    if start < end:
+        return start <= current < end
+    return current >= start or current < end
 
-            if animated:
-                poster_file = fetch_into(
-                    src = '%s/%s?auto=format,compress' % (IMGIX_BASE, animated),
-                    dst = 'motion-%s.mp4' % animated,
-                )
-                if poster_file:
-                    media_type = "video"
 
-            if not poster_file and poster:
-                poster_file = fetch_into(
-                    src = '%s/%s?fit=crop&w=1000&h=1500&fm=jpeg&auto=format,compress&cs=origin' % (IMGIX_BASE, poster),
-                    dst = 'poster-%s.jpg' % poster,
-                )
-
-            status = show['movie'].get('showingStatus') or ''
-
-            is_3d = False
-            for badge in (show.get('showingBadges') or []):
-                title = (badge.get('title') or badge.get('displayName') or '').strip().lower()
-                if title == '3d' or title.startswith('3d ') or ' 3d' in title:
-                    is_3d = True
-                    break
-
-            yield dict(
-                unix = unix,
-                start = start.strftime("%-I:%M %p").upper(),
-                past = show['past'],
-                current = show['current'],
-                name = show['movie']['name'],
-                rating = show['movie'].get('rating') or '',
-                rating_reason = show['movie'].get('ratingReason') or '',
-                runtime = show['movie']['duration'],
-                status = status,
-                status_label = status.upper(),
-                is_3d = is_3d,
-                upcoming = False,
-                color = COLOR_NOW,
-                poster_file = poster_file or "",
-                media_type = media_type,
-            )
-
-    shows = list(iter_shows())
-    out = {
-        'name': screen['name'],
-    }
-
-    def show_end(idx):
-        show = shows[idx]
-        if idx + 1 < len(shows):
-            return shows[idx + 1]['unix']
-        runtime = show.get('runtime') or 120
-        return show['unix'] + runtime * 60
-
-    # 1) Upcoming window: 25 minutes before start until start
-    for idx, show in enumerate(shows):
-        upcoming_from = show['unix'] - UPCOMING_MINUTES * 60
-        if upcoming_from <= now < show['unix']:
-            show = dict(show)
-            show['upcoming'] = True
-            show['status_label'] = 'NEXT SHOWING'
-            show['color'] = COLOR_UPCOMING
-            out['show'] = show
-            return out
-
-    # 2) Playing window: start until next show (or start + runtime)
-    for idx, show in enumerate(shows):
-        if show['unix'] <= now < show_end(idx):
-            show = dict(show)
-            show['upcoming'] = False
-            show['status_label'] = 'NOW PLAYING'
-            show['color'] = COLOR_NOW
-            out['show'] = show
-            return out
-
-    # 3) Fall back to Indy's current flag
-    for show in shows:
-        if show['current']:
-            show = dict(show)
-            show['upcoming'] = False
-            show['status_label'] = 'NOW PLAYING'
-            show['color'] = COLOR_NOW
-            out['show'] = show
-            break
-
-    return out
-
-def update_thread():
-    my_serial = os.environ['SERIAL']
-    for sign in config.signs:
-        if sign['serial'] == my_serial:
-            break
-    else:
-        print >>sys.stderr, "couldn't find my sign"
-        return
-
-    should_blank = sign['blank']
-    device.turn_screen_on()
-
-    while 1:
-        indy_data = fetch_indy(sign['indy_id'])
-        if indy_data is None:
-            print >>sys.stderr, "No screen data"
-            time.sleep(60)
+def resolve_schedule_visibility(manifest, timestamp=None):
+    """Apply category hide windows using the location's local wall clock."""
+    local = location_localtime(manifest, timestamp)
+    current = local.tm_hour * 3600 + local.tm_min * 60 + local.tm_sec
+    rules = {}
+    for rule in manifest.get("schedule", []):
+        try:
+            category_name = str(rule.get("category") or "").strip().lower()
+        except AttributeError:
             continue
+        if category_name:
+            rules.setdefault(category_name, []).append(rule)
+    categories = list(manifest.get("categories", []))
+    categories.extend(manifest.get("hotfoods_categories", []))
+    for category in categories:
+        category.pop("schedule_visible", None)
+        matching = rules.get(str(category.get("name") or "").strip().lower(), [])
+        if not matching:
+            continue
+        hidden = False
+        for rule in matching:
+            start = clock_seconds(rule.get("hide_start_time"))
+            end = clock_seconds(rule.get("hide_end_time"))
+            if inside_hidden_window(current, start, end):
+                hidden = True
+                break
+        category["schedule_visible"] = not hidden
+    return manifest
 
-        with open('indy.json', 'wb') as f:
-            json.dump(indy_data, f)
 
-        for wait in xrange(12):
-            screen_data = parse_indy(indy_data)
-            with open('screen.json', 'wb') as f:
-                json.dump(screen_data, f)
+def prepare_runtime_fields(manifest, timestamp=None):
+    resolve_special_day_prices(manifest, timestamp)
+    resolve_schedule_visibility(manifest, timestamp)
+    return manifest
 
-            if should_blank: 
-                if 'show' in screen_data:
-                    device.turn_screen_on()
-                else:
-                    device.turn_screen_off()
 
-            time.sleep(10)
+def runtime_field_signature(manifest):
+    values = []
+    for combo in manifest.get("combos", []):
+        values.append(("price", combo.get("id"), combo.get("effective_display_price")))
+    for category in manifest.get("categories", []):
+        values.append(("schedule", category.get("id"), category.get("schedule_visible")))
+        for item in category.get("items", []):
+            values.append(("price", item.get("id"), item.get("effective_display_price")))
+    for category in manifest.get("hotfoods_categories", []):
+        values.append(("hotfoods_schedule", category.get("id"), category.get("schedule_visible")))
+        for item in category.get("items", []):
+            values.append(("hotfoods_price", item.get("id"), item.get("effective_display_price")))
+    return values
 
-def test():
-    from pprint import pprint
-    with open('indy.json', 'rb') as f:
-        screen = json.load(f)
-        pprint(parse_indy(screen))
+
+def wait_with_runtime_updates(seconds):
+    """Wake at least once per minute for local schedule/price transitions."""
+    deadline = time.time() + max(0, seconds)
+    while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return
+        time.sleep(min(60, remaining))
+        if time.time() >= deadline:
+            return
+        current_state = read_json(STATE, {}) or {}
+        manifest = current_state.get("manifest")
+        if not manifest:
+            continue
+        before = runtime_field_signature(manifest)
+        prepare_runtime_fields(manifest)
+        if runtime_field_signature(manifest) != before:
+            atomic_json(STATE, current_state)
+            persist_good_state(current_state)
+
+
+def ensure_dir(path):
+    if not path:
+        return
+    try:
+        os.makedirs(path)
+    except OSError as exc:
+        if exc.errno != errno.EEXIST:
+            raise
+
+
+def referenced_media(manifest):
+    for combo in manifest.get("combos", []):
+        if combo.get("local_image"):
+            yield combo["local_image"]
+    for category in manifest.get("categories", []):
+        if category.get("local_image"):
+            yield category["local_image"]
+        for item in category.get("items", []):
+            if item.get("local_image"):
+                yield item["local_image"]
+    for category in manifest.get("hotfoods_categories", []):
+        if category.get("local_image"):
+            yield category["local_image"]
+        for item in category.get("items", []):
+            if item.get("local_image"):
+                yield item["local_image"]
+    for ad in manifest.get("advertisements", []):
+        if ad.get("local_media"):
+            yield ad["local_media"]
+    for media in manifest.get("hotfoods_media", []):
+        if media.get("local_media"):
+            yield media["local_media"]
+
+
+def restore_persistent_state():
+    if not PERSIST_STATE or os.path.exists(STATE):
+        return False
+    cached = read_json(PERSIST_STATE, {}) or {}
+    if not cached.get("manifest"):
+        return False
+    prepare_runtime_fields(cached["manifest"])
+    for name in set(referenced_media(cached["manifest"])):
+        source = os.path.join(PERSIST, name)
+        destination = os.path.join(CACHE, name)
+        if os.path.isfile(source) and os.path.getsize(source) > 0 and not os.path.exists(destination):
+            atomic_copy(source, destination)
+    cached.update({"ok": False, "checked_at": int(time.time()), "error": "Offline: showing last saved menu"})
+    atomic_json(STATE, cached)
+    log("restored last saved menu", cached["manifest"].get("manifest_version"))
+    return True
+
+
+def persist_good_state(value):
+    if not PERSIST_STATE:
+        return
+    try:
+        atomic_json(PERSIST_STATE, value)
+    except Exception as exc:
+        log("persistent state save failed:", exc)
+
+
+def validate_manifest(value, expected_screen):
+    if not isinstance(value, dict) or value.get("schema_version") != 1:
+        raise ValueError("unsupported or missing schema_version")
+    # Screen-specific responses may omit collections that do not apply. In
+    # particular, the Hot Foods response has categories but no combos.
+    value.setdefault("combos", [])
+    value.setdefault("advertisements", [])
+    value.setdefault("schedule", [])
+    for key in ("combos", "categories", "advertisements", "schedule"):
+        if not isinstance(value.get(key), list):
+            raise ValueError("%s must be an array" % key)
+    for key in ("hotfoods_media", "hotfoods_media_urls"):
+        if key in value and not isinstance(value[key], list):
+            raise ValueError("%s must be an array" % key)
+    screen = value.get("screen")
+    location = value.get("location")
+    if not isinstance(screen, dict) or screen.get("id") != expected_screen:
+        raise ValueError("response screen.id does not match configuration")
+    if not isinstance(location, dict) or not location.get("id"):
+        raise ValueError("missing location")
+    return value
+
+
+def active_on(ad, today):
+    return (ad.get("active") is True and
+            (not ad.get("start_date") or ad["start_date"] <= today) and
+            (not ad.get("end_date") or ad["end_date"] >= today))
+
+
+def media_filename(url, version):
+    parsed = urlparse(url)
+    ext = os.path.splitext(parsed.path)[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".mkv"):
+        ext = ".bin"
+    digest = hashlib.sha256((url + "|" + str(version or "")).encode("utf-8")).hexdigest()
+    return "media-" + digest[:24] + ext
+
+
+def detect_media_type(url, declared):
+    try:
+        ext = os.path.splitext(urlparse(url).path)[1].lower()
+    except Exception:
+        ext = ""
+    if ext in VIDEO_EXTENSIONS:
+        return "video"
+    if ext in IMAGE_EXTENSIONS:
+        return "image"
+    return declared if declared in ALLOWED_MEDIA else None
+
+
+def selected_location_id(config):
+    selected = str(config.get("location", "") or "").strip()
+    if selected and selected != "custom":
+        return selected
+    return str(config.get("location_id", "") or "").strip()
+
+
+def cache_media(url, version):
+    if not isinstance(url, STRING_TYPES) or not url.startswith(("https://", "http://")):
+        return None
+    name = media_filename(url, version)
+    final = os.path.join(CACHE, name)
+    persistent = os.path.join(PERSIST, name) if PERSIST else None
+    if os.path.isfile(final) and os.path.getsize(final) > 0:
+        if persistent and not os.path.exists(persistent):
+            try:
+                atomic_copy(final, persistent)
+            except Exception as exc:
+                log("persistent media save failed:", name, exc)
+        return name
+    if persistent and os.path.isfile(persistent) and os.path.getsize(persistent) > 0:
+        try:
+            atomic_copy(persistent, final)
+            return name
+        except Exception as exc:
+            log("persistent media restore failed:", name, exc)
+    temp = final + ".part"
+    try:
+        response = requests.get(url, headers={"User-Agent": "FSCinema-info-beamer/1.0"}, timeout=45, stream=True)
+        response.raise_for_status()
+        with open(temp, "wb") as out:
+            for chunk in response.iter_content(1024 * 256):
+                if chunk:
+                    out.write(chunk)
+        os.rename(temp, final)
+        if persistent:
+            try:
+                atomic_copy(final, persistent)
+            except Exception as exc:
+                log("persistent media save failed:", name, exc)
+        return name
+    except Exception as exc:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+        log("media fetch failed:", url, exc)
+        return None
+
+
+def enrich_media(manifest, show_ads):
+    today = time.strftime("%Y-%m-%d", location_localtime(manifest))
+    for combo in manifest["combos"]:
+        combo["local_image"] = cache_media(combo.get("image_url"), combo.get("content_version"))
+    for category in manifest["categories"]:
+        category["local_image"] = cache_media(category.get("image_url"), category.get("content_version"))
+        for item in category.get("items", []):
+            item["local_image"] = cache_media(item.get("image_url"), item.get("content_version"))
+    ads = []
+    if show_ads:
+        for ad in manifest["advertisements"]:
+            media_type = detect_media_type(ad.get("url"), ad.get("media_type"))
+            if active_on(ad, today) and media_type in ALLOWED_MEDIA:
+                ad["media_type"] = media_type
+                ad["local_media"] = cache_media(ad.get("url"), ad.get("content_version"))
+                if ad["local_media"]:
+                    ads.append(ad)
+    manifest["advertisements"] = sorted(ads, key=lambda x: (x.get("display_order", 0), x.get("name", "")))
+
+    # Hot Foods media is a dedicated playlist and must not be sourced from the
+    # general advertisements array. Accept the URL-only form as a compatibility
+    # fallback when the richer collection is absent.
+    hotfoods_media = manifest.get("hotfoods_media") or []
+    if not hotfoods_media:
+        hotfoods_media = [
+            {"url": url, "display_order": index + 1}
+            for index, url in enumerate(manifest.get("hotfoods_media_urls", []))
+        ]
+    cached_hotfoods_media = []
+    for media in hotfoods_media:
+        if not isinstance(media, dict):
+            continue
+        media_type = detect_media_type(media.get("url"), media.get("media_type"))
+        if media_type not in ALLOWED_MEDIA:
+            continue
+        media["media_type"] = media_type
+        media["local_media"] = cache_media(media.get("url"), media.get("content_version"))
+        if media["local_media"]:
+            cached_hotfoods_media.append(media)
+    manifest["hotfoods_media"] = sorted(
+        cached_hotfoods_media,
+        key=lambda x: (x.get("display_order", 0), x.get("url", "")),
+    )
+    return manifest
+
+
+def fetch(config, etag, screen_id=None):
+    endpoint = str(config.get("endpoint", "")).strip()
+    params = urlencode({"location_id": selected_location_id(config), "screen_id": screen_id or config.get("screen_id", "combo")})
+    url = endpoint + ("&" if "?" in endpoint else "?") + params
+    headers = {"Accept": "application/json", "User-Agent": "FSCinema-info-beamer/1.0"}
+    token = str(config.get("token", "")).strip()
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    if etag:
+        headers["If-None-Match"] = etag
+    response = requests.get(url, headers=headers, timeout=30)
+    if response.status_code == 304:
+        return etag, None, True
+    response.raise_for_status()
+    return response.headers.get("ETag"), response.json(), False
+
+
+def menu_hotfoods_manifest(menu, hotfoods):
+    """Combine a combo or a-la-carte response with a Hot Foods response."""
+    # Do not mutate the cached source manifest. Keeping the two source objects
+    # independent lets each endpoint use its own ETag on later refreshes.
+    combined = dict(menu)
+    combined["hotfoods_categories"] = hotfoods.get("categories", [])
+    combined["hotfoods_screen"] = hotfoods.get("screen", {})
+    combined["hotfoods_media"] = hotfoods.get("hotfoods_media", [])
+    combined["hotfoods_media_urls"] = hotfoods.get("hotfoods_media_urls", [])
+    combined["schedule"] = list(menu.get("schedule", [])) + list(hotfoods.get("schedule", []))
+    combined["manifest_version"] = "%s / %s" % (
+        menu.get("manifest_version", "menu"),
+        hotfoods.get("manifest_version", "hotfoods"),
+    )
+    return combined
+
 
 def main():
-    if 'TEST' in os.environ:
-        send_clock()
-        test()
-        return
+    ensure_dir(CACHE)
+    ensure_dir(PERSIST)
+    restore_persistent_state()
+    etag = None
+    rotation_etags = {}
+    rotation_manifests = {}
+    last_config_fingerprint = None
+    while True:
+        failed = False
+        config = read_json(CONFIG, {}) or {}
+        stable_config = {k: config.get(k) for k in ("endpoint", "location", "location_id", "screen_id", "token", "show_ads", "playback_mode", "hide_hotfoods_always")}
+        fingerprint = hashlib.sha256(json.dumps(stable_config, sort_keys=True).encode("utf-8")).hexdigest()
+        if fingerprint != last_config_fingerprint:
+            etag = None
+            rotation_etags = {}
+            rotation_manifests = {}
+            last_config_fingerprint = fingerprint
+        old_state = read_json(STATE, {}) or {}
+        try:
+            rotation_mode = config.get("playback_mode")
+            hide_hotfoods = bool(config.get("hide_hotfoods_always", False))
+            rotating_hotfoods = rotation_mode in ("alternate_combo_hotfoods", "alternate_alacarte_hotfoods") and not hide_hotfoods
+            effective_screen = config.get("screen_id", "combo")
+            if hide_hotfoods and rotation_mode == "alternate_combo_hotfoods":
+                effective_screen = "combo"
+            elif hide_hotfoods and rotation_mode == "alternate_alacarte_hotfoods":
+                effective_screen = "alacarte"
+            if rotating_hotfoods:
+                menu_screen = "alacarte" if rotation_mode == "alternate_alacarte_hotfoods" else "combo"
+                for screen_id in (menu_screen, "hotfoods"):
+                    next_etag, next_manifest, unchanged = fetch(
+                        config, rotation_etags.get(screen_id), screen_id
+                    )
+                    rotation_etags[screen_id] = next_etag
+                    if not unchanged:
+                        next_manifest = validate_manifest(next_manifest, screen_id)
+                        prepare_runtime_fields(next_manifest)
+                        next_manifest = enrich_media(
+                            next_manifest,
+                            config.get("show_ads", True) if screen_id == menu_screen else False,
+                        )
+                        rotation_manifests[screen_id] = next_manifest
+                    elif screen_id not in rotation_manifests:
+                        raise ValueError("%s manifest cache is empty after 304" % screen_id)
+                menu_manifest = rotation_manifests[menu_screen]
+                hotfoods_manifest = rotation_manifests["hotfoods"]
+                prepare_runtime_fields(menu_manifest)
+                prepare_runtime_fields(hotfoods_manifest)
+                manifest = menu_hotfoods_manifest(menu_manifest, hotfoods_manifest)
+                prepare_runtime_fields(manifest)
+                new_state = {"ok": True, "checked_at": int(time.time()), "etag": rotation_etags, "error": None, "manifest": manifest}
+                atomic_json(STATE, new_state)
+                persist_good_state(new_state)
+                log("published %s / hot foods rotation" % menu_screen, manifest.get("manifest_version"))
+                unchanged = False
+            else:
+                etag, manifest, unchanged = fetch(config, etag, effective_screen)
+            if rotating_hotfoods:
+                pass
+            elif unchanged:
+                if old_state.get("manifest"):
+                    prepare_runtime_fields(old_state["manifest"])
+                old_state.update({"ok": True, "checked_at": int(time.time()), "etag": etag, "error": None})
+                atomic_json(STATE, old_state)
+                if old_state.get("manifest"):
+                    persist_good_state(old_state)
+            else:
+                manifest = validate_manifest(manifest, effective_screen)
+                prepare_runtime_fields(manifest)
+                manifest = enrich_media(manifest, config.get("show_ads", True))
+                new_state = {"ok": True, "checked_at": int(time.time()), "etag": etag, "error": None, "manifest": manifest}
+                atomic_json(STATE, new_state)
+                persist_good_state(new_state)
+                log("published manifest", manifest.get("manifest_version"))
+        except Exception as exc:
+            failed = True
+            if old_state.get("manifest"):
+                prepare_runtime_fields(old_state["manifest"])
+            old_state.update({"ok": False, "checked_at": int(time.time()), "error": str(exc)[:300]})
+            atomic_json(STATE, old_state)
+            if old_state.get("manifest"):
+                persist_good_state(old_state)
+            log("manifest refresh failed; retaining last valid data:", exc)
+        interval = max(60, min(86400, int(config.get("refresh_seconds", 600) or 600)))
+        wait_with_runtime_updates(min(interval, 60) if failed else interval)
 
-    while time.time() < 1000000:
-        print >>sys.stderr, "waiting for correct time"
-        time.sleep(1)
-
-    if 'SERIAL' in os.environ:
-        update = threading.Thread(target=update_thread)
-        update.daemon = True
-        update.start()
-    else:
-        print >>sys.stderr, "updating disabled"
-
-    while 1:
-        send_clock()
-        time.sleep(5)
 
 if __name__ == "__main__":
     main()
